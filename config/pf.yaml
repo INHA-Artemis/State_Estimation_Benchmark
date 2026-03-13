@@ -1,3 +1,10 @@
+# [협업 주석]
+# Goal: Particle Filter 하이퍼파라미터와 model noise 설정을 선언적으로 관리한다.
+# What it does: particle 수, resampling 기준, initialization, motion/measurement noise,
+# evaluation/visualization/output 옵션을 정의한다.
+filter:
+  name: pf # future-ready: pf, ekf, inekf
+
 num_particles: 500
 resample_threshold_ratio: 0.5
 seed: 7
@@ -17,3 +24,21 @@ measurement_model:
   # GPS measures x,y
   position_indices: [0, 1]
   measurement_noise_diag: [0.7, 0.7]
+
+evaluation:
+  enabled: true
+  position_indices: [0, 1]
+  yaw_index: 2
+
+visualization:
+  enabled: true
+  position_indices: [0, 1]
+  save_animation: true
+  animation:
+    format: gif # gif or mp4
+    fps: 20
+    tail_length: 80
+
+output:
+  dir: outputs
+  timestamped_subdir: true

@@ -1,0 +1,3 @@
+# [협업 주석]
+# Goal: UKF 전용 파라미터를 config로 관리한다.
+# What it does: sigma point 파라미터(alpha/beta/kappa), noise, 초기 조건을 추후 정의한다.

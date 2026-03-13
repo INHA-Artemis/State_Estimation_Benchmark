@@ -1,3 +1,6 @@
+# [협업 주석]
+# Goal: dataset_type 기반 loader 선택 로직을 중앙화한다.
+# What it does: config 값을 해석해 해당 DatasetLoader를 생성하고, 미지원 타입은 명확히 에러 처리한다.
 """Dataset loader factory."""
 
 from __future__ import annotations

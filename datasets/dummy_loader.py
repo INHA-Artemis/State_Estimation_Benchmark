@@ -1,3 +1,6 @@
+# [협업 주석]
+# Goal: 실제 dataset parser 없이 PF pipeline을 빠르게 검증할 수 있는 synthetic loader를 제공한다.
+# What it does: dummy trajectory를 생성하고 IMU/GPS noise를 주입해 DatasetSequence를 반환한다.
 """Synthetic placeholder loader for PF pipeline testing."""
 
 from __future__ import annotations

@@ -1,3 +1,7 @@
+# [협업 주석]
+# Goal: dataset 입력 형식을 통일해 filter/runner 코드와 decouple한다.
+# What it does: DatasetStep, DatasetSequence, DatasetLoader interface를 정의하여
+# IMU/GPS/GT state를 시간축으로 제공하는 표준 구조를 만든다.
 """Dataset interfaces for estimator runners."""
 
 from __future__ import annotations

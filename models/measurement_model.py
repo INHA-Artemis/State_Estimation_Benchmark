@@ -1,3 +1,7 @@
+# [협업 주석]
+# Goal: filter와 분리된 MeasurementModel abstraction을 제공한다.
+# What it does: likelihood interface와 Gaussian PositionMeasurementModel을 제공하여
+# measurement z에 대한 p(z|x) / log-likelihood를 계산한다.
 """Measurement model interfaces and minimal implementations."""
 
 from __future__ import annotations

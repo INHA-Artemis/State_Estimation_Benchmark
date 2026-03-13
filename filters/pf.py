@@ -1,3 +1,7 @@
+# [협업 주석]
+# Goal: benchmark용 Particle Filter(PF) 핵심 로직을 modular하게 구현한다.
+# What it does: particle 초기화, motion/measurement model 기반 predict/update, log-safe weight 처리,
+# ESS 계산, systematic resampling, state/covariance 추정을 수행한다.
 """Particle Filter implementation."""
 
 from __future__ import annotations

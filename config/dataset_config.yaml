@@ -1,3 +1,6 @@
+# [협업 주석]
+# Goal: dataset 선택과 실행 모드(imu_only/gps_only/fused)를 config로 제어한다.
+# What it does: dataset type, pose type, sensor 사용 여부, synthetic sequence/noise 파라미터를 정의한다.
 dataset_type: dummy
 pose_type: 2d # options: 2d, 6d
 mode: fused # options: imu_only, gps_only, fused

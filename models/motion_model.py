@@ -1,3 +1,7 @@
+# [협업 주석]
+# Goal: filter와 분리된 MotionModel abstraction을 제공한다.
+# What it does: propagate interface와 PlanarVelocityYawRateModel 구현을 통해
+# control input(u=[v, yaw_rate]) 기반 state propagation(+process noise)을 수행한다.
 """Motion model interfaces and minimal implementations."""
 
 from __future__ import annotations

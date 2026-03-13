@@ -1,3 +1,6 @@
+# [협업 주석]
+# Goal: YAML config 로딩을 재사용 가능한 utility로 제공한다.
+# What it does: 파일 존재/형식 검증 후 safe_load로 dict를 반환하고, 오류 상황을 명확히 전달한다.
 """Reusable YAML config loading utilities."""
 
 from __future__ import annotations

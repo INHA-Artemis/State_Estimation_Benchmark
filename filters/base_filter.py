@@ -1,3 +1,6 @@
+# [협업 주석]
+# Goal: 모든 estimator filter가 따를 공통 BaseFilter interface를 정의한다.
+# What it does: predict, update, get_state, reset, get_covariance API contract를 제공한다.
 """Base interface for state estimation filters."""
 
 from __future__ import annotations

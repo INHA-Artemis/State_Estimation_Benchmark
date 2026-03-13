@@ -1,3 +1,6 @@
+# [협업 주석]
+# Goal: filter/model에서 공통으로 사용하는 수학 helper를 분리한다.
+# What it does: angle wrapping과 weighted mean/covariance 계산(angular state 보정 포함)을 제공한다.
 """Small math helpers shared across modules."""
 
 from __future__ import annotations
