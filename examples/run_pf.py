@@ -10,6 +10,14 @@ from pathlib import Path
 
 
 def main() -> None:
+    """
+    Goal:
+        examples 디렉터리에서 PF benchmark를 바로 실행하는 진입점을 제공한다.
+    Input:
+        별도 argument 없이 repo_root 기준 기본 config 경로를 내부에서 구성한다.
+    Output:
+        없음. run_pf를 호출해 benchmark를 실행한다.
+    """
     repo_root = Path(__file__).resolve().parents[1]
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))

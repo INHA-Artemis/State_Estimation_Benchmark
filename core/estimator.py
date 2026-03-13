@@ -11,7 +11,7 @@ from typing import Literal
 
 import numpy as np
 
-from datasets.dataset_base import DatasetSequence
+from dataset_loader.dataset_base import DatasetSequence
 from filters.base_filter import BaseFilter
 
 RunMode = Literal["imu_only", "gps_only", "fused"]
@@ -36,7 +36,15 @@ def run_filter_sequence(
     mode: RunMode,
     state_dim: int,
 ) -> EstimationResult:
-    """Execute one filter on one dataset sequence and collect raw traces."""
+    """
+    Goal:
+        하나의 DatasetSequence를 따라 filter predict/update를 실행하고 raw trace를 수집한다.
+    Input:
+        filter_obj는 BaseFilter interface를 구현한 instance이고, sequence는 time-ordered DatasetSequence이다.
+        mode는 imu_only/gps_only/fused 중 하나이며, state_dim은 ground truth를 자를 state 길이이다.
+    Output:
+        timestamps, estimates, ground_truth, gps_measurements, latency 배열을 담은 EstimationResult를 반환한다.
+    """
     if mode not in {"imu_only", "gps_only", "fused"}:
         raise ValueError(f"Unsupported mode: {mode}")
 

@@ -11,7 +11,14 @@ import numpy as np
 
 
 def wrap_angle(angle: np.ndarray | float) -> np.ndarray | float:
-    """Wrap angle(s) to [-pi, pi)."""
+    """
+    Goal:
+        angle 값을 [-pi, pi) 범위로 정규화한다.
+    Input:
+        angle은 scalar 또는 numpy array 형태의 angle 값이다.
+    Output:
+        wrap된 angle 값을 같은 의미의 numpy scalar/array로 반환한다.
+    """
     return (np.asarray(angle) + np.pi) % (2.0 * np.pi) - np.pi
 
 
@@ -20,7 +27,15 @@ def weighted_mean_cov(
     weights: np.ndarray,
     angle_indices: Iterable[int] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Compute weighted mean/covariance with optional circular mean for angles."""
+    """
+    Goal:
+        weighted sample 집합의 mean과 covariance를 계산한다.
+    Input:
+        samples는 [N, D] sample array이고, weights는 각 sample weight이다.
+        angle_indices가 주어지면 해당 차원은 circular mean과 wrapped residual로 처리한다.
+    Output:
+        weighted mean vector와 covariance matrix tuple을 반환한다.
+    """
     angle_set = set(angle_indices or [])
     mean = np.average(samples, axis=0, weights=weights)
 

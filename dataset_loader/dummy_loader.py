@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from datasets.dataset_base import DatasetLoader, DatasetSequence, DatasetStep
+from dataset_loader.dataset_base import DatasetLoader, DatasetSequence, DatasetStep
 from utils.math_utils import wrap_angle
 
 
@@ -17,6 +17,14 @@ class DummySequenceLoader(DatasetLoader):
     """Generate synthetic trajectory with optional IMU/GPS observations."""
 
     def __init__(self, cfg: dict[str, Any]) -> None:
+        """
+        Goal:
+            synthetic dataset 생성에 필요한 설정값을 loader에 저장한다.
+        Input:
+            cfg는 pose_type, sequence_length, dt, noise, sensor 사용 여부를 담은 dict이다.
+        Output:
+            없음. DummySequenceLoader instance field를 초기화한다.
+        """
         self.cfg = cfg
         self.pose_type = str(cfg.get("pose_type", "2d")).lower()
         self.length = int(cfg.get("sequence_length", 300))
@@ -24,6 +32,14 @@ class DummySequenceLoader(DatasetLoader):
         self.seed = int(cfg.get("seed", 0))
 
     def load_sequence(self) -> DatasetSequence:
+        """
+        Goal:
+            synthetic trajectory와 optional IMU/GPS observation을 생성한다.
+        Input:
+            self는 seed와 sensor/noise 설정이 저장된 DummySequenceLoader instance이다.
+        Output:
+            생성된 DatasetStep 목록을 포함하는 DatasetSequence를 반환한다.
+        """
         rng = np.random.default_rng(self.seed)
         is_6d = self.pose_type == "6d"
         state_dim = 6 if is_6d else 3

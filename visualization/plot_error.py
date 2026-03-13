@@ -20,7 +20,15 @@ def save_error_plot(
     yaw_index: int | None = None,
     title: str = "Estimation Error",
 ) -> Path:
-    """Save time-series error plot (position norm + optional yaw error)."""
+    """
+    Goal:
+        time-series estimation error plot을 생성해 file로 저장한다.
+    Input:
+        timestamps, estimates, ground_truth는 plotting 대상 배열이고, output_path는 저장 경로이다.
+        position_indices, yaw_index, title은 표시할 error 항목과 figure 제목을 제어한다.
+    Output:
+        저장된 figure file의 Path를 반환한다.
+    """
     import matplotlib.pyplot as plt
 
     ts = np.asarray(timestamps, dtype=float)

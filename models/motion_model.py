@@ -25,7 +25,14 @@ class MotionModel(ABC):
         dt: float,
         noise: bool = True,
     ) -> np.ndarray:
-        """Propagate one or more states forward."""
+        """
+        Goal:
+            state propagation interface를 정의한다.
+        Input:
+            states는 propagate할 state batch이고, u는 optional control input, dt는 time delta, noise는 process noise 사용 여부이다.
+        Output:
+            propagate된 state numpy array를 반환해야 한다.
+        """
 
 
 class PlanarVelocityYawRateModel(MotionModel):
@@ -44,6 +51,15 @@ class PlanarVelocityYawRateModel(MotionModel):
         yaw_index: int = 2,
         rng: Optional[np.random.Generator] = None,
     ) -> None:
+        """
+        Goal:
+            planar motion propagation에 필요한 state index와 process noise 설정을 저장한다.
+        Input:
+            state_dim은 state 크기이고, process_noise_cov는 process covariance matrix이다.
+            x_index, y_index, yaw_index는 state 내 위치를 가리키고, rng는 optional random generator이다.
+        Output:
+            없음. PlanarVelocityYawRateModel instance field를 초기화한다.
+        """
         self.state_dim = int(state_dim)
         self.Q = np.asarray(process_noise_cov, dtype=float)
         self.x_index = int(x_index)
@@ -61,6 +77,14 @@ class PlanarVelocityYawRateModel(MotionModel):
         dt: float,
         noise: bool = True,
     ) -> np.ndarray:
+        """
+        Goal:
+            control input u=[v, yaw_rate]를 사용해 state batch를 한 step 전파한다.
+        Input:
+            states는 [N, D] state array이고, u는 optional control input, dt는 time delta, noise는 process noise 추가 여부이다.
+        Output:
+            propagation과 optional process noise가 반영된 state numpy array를 반환한다.
+        """
         states = np.asarray(states, dtype=float)
         out = states.copy()
 

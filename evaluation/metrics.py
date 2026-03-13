@@ -11,6 +11,14 @@ import numpy as np
 
 
 def _to_array(name: str, value: np.ndarray) -> np.ndarray:
+    """
+    Goal:
+        metric 계산 전에 입력 배열 형식을 2D numpy array로 검증한다.
+    Input:
+        name은 오류 메시지용 식별자이고, value는 검증할 array-like 입력이다.
+    Output:
+        dtype=float의 2D numpy array를 반환한다.
+    """
     arr = np.asarray(value, dtype=float)
     if arr.ndim != 2:
         raise ValueError(f"{name} must be 2D array [T, D], got shape={arr.shape}")
@@ -18,6 +26,14 @@ def _to_array(name: str, value: np.ndarray) -> np.ndarray:
 
 
 def _latency_stats(latency_s: np.ndarray) -> dict[str, float]:
+    """
+    Goal:
+        latency sequence를 summary statistics로 변환한다.
+    Input:
+        latency_s는 seconds 단위 latency numpy array이다.
+    Output:
+        count, mean_ms, percentile 등을 포함한 dict를 반환한다.
+    """
     if latency_s.size == 0:
         return {
             "count": 0,
@@ -51,9 +67,13 @@ def compute_metrics(
     update_latency_s: np.ndarray | None = None,
 ) -> dict[str, object]:
     """
-    Compute core benchmark metrics for one run.
-
-    Returns JSON-serializable dictionary.
+    Goal:
+        estimation 결과와 ground truth를 비교해 핵심 benchmark metric을 계산한다.
+    Input:
+        estimates와 ground_truth는 [T, D] 배열이고, timestamps/position_indices/yaw_index는 metric 계산 옵션이다.
+        step_latency_s, predict_latency_s, update_latency_s는 latency 통계 계산에 사용된다.
+    Output:
+        RMSE, position error, yaw_rmse, latency summary가 담긴 JSON-serializable dict를 반환한다.
     """
     est = _to_array("estimates", estimates)
     gt = _to_array("ground_truth", ground_truth)
@@ -119,7 +139,14 @@ def compute_latency_only_metrics(
     predict_latency_s: np.ndarray | None = None,
     update_latency_s: np.ndarray | None = None,
 ) -> dict[str, object]:
-    """Return latency statistics when ground truth is unavailable."""
+    """
+    Goal:
+        ground truth가 없을 때 latency 관련 metric만 계산한다.
+    Input:
+        step_latency_s, predict_latency_s, update_latency_s는 단계별 latency 배열이다.
+    Output:
+        latency summary와 sample 수를 담은 dict를 반환한다.
+    """
     step_latency = np.asarray(step_latency_s if step_latency_s is not None else [], dtype=float)
     predict_latency = np.asarray(predict_latency_s if predict_latency_s is not None else [], dtype=float)
     update_latency = np.asarray(update_latency_s if update_latency_s is not None else [], dtype=float)

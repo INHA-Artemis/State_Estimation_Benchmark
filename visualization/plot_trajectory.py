@@ -19,7 +19,15 @@ def save_trajectory_plot(
     gps_measurements: np.ndarray | None = None,
     title: str = "Trajectory",
 ) -> Path:
-    """Save 2D trajectory comparison figure."""
+    """
+    Goal:
+        estimate, ground truth, optional GPS를 비교하는 2D trajectory plot을 저장한다.
+    Input:
+        estimates와 ground_truth는 trajectory 배열이고, output_path는 저장 경로이다.
+        position_indices, gps_measurements, title은 사용할 축과 optional overlay를 제어한다.
+    Output:
+        저장된 figure file의 Path를 반환한다.
+    """
     import matplotlib.pyplot as plt
 
     est = np.asarray(estimates, dtype=float)

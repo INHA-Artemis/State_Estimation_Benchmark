@@ -29,6 +29,15 @@ class ParticleFilter(BaseFilter):
         angle_indices: Optional[Iterable[int]] = None,
         random_seed: Optional[int] = None,
     ) -> None:
+        """
+        Goal:
+            ParticleFilter 실행에 필요한 particle storage와 dependency를 초기화한다.
+        Input:
+            num_particles, state_dim은 particle shape를 정의하고, motion_model/measurement_model은 predict/update model이다.
+            resample_threshold_ratio, angle_indices, random_seed는 resampling과 random 동작을 제어한다.
+        Output:
+            없음. ParticleFilter instance field를 초기 상태로 설정한다.
+        """
         self.num_particles = int(num_particles)
         self.state_dim = int(state_dim)
         self.motion_model = motion_model
@@ -49,7 +58,14 @@ class ParticleFilter(BaseFilter):
         initial_cov: Optional[np.ndarray] = None,
         particles: Optional[np.ndarray] = None,
     ) -> None:
-        """Initialize particles from explicit samples or Gaussian parameters."""
+        """
+        Goal:
+            particle 집합과 weight, state moment를 초기화한다.
+        Input:
+            initial_mean과 initial_cov는 Gaussian initialization에 사용되고, particles가 주어지면 explicit sample로 사용된다.
+        Output:
+            없음. 내부 particles와 weights가 재설정된다.
+        """
         if particles is not None:
             arr = np.asarray(particles, dtype=float)
             if arr.shape != (self.num_particles, self.state_dim):
@@ -72,12 +88,26 @@ class ParticleFilter(BaseFilter):
         self._refresh_moments()
 
     def predict(self, u: Optional[np.ndarray], dt: float) -> None:
-        """Propagate particles through motion model."""
+        """
+        Goal:
+            모든 particle을 MotionModel로 한 step propagate한다.
+        Input:
+            u는 optional control input이고, dt는 propagation에 사용할 time delta이다.
+        Output:
+            없음. 내부 particles와 추정 moment가 갱신된다.
+        """
         self.particles = self.motion_model.propagate(self.particles, u, dt, noise=True)
         self._refresh_moments()
 
     def update(self, z: np.ndarray) -> None:
-        """Update particle weights from measurement likelihood."""
+        """
+        Goal:
+            measurement likelihood를 이용해 particle weight를 업데이트하고 필요하면 resampling한다.
+        Input:
+            z는 현재 time step의 measurement vector이다.
+        Output:
+            없음. 내부 weights, particles, state moment, ESS 정보가 갱신된다.
+        """
         if self.measurement_model is None:
             return
 
@@ -105,25 +135,61 @@ class ParticleFilter(BaseFilter):
         self._refresh_moments()
 
     def get_state(self) -> np.ndarray:
-        """Return weighted state estimate."""
+        """
+        Goal:
+            현재 weighted state estimate를 안전하게 반환한다.
+        Input:
+            self는 ParticleFilter instance이다.
+        Output:
+            내부 state estimate copy를 numpy array로 반환한다.
+        """
         return self._state.copy()
 
     def get_covariance(self) -> np.ndarray:
-        """Return weighted covariance estimate."""
+        """
+        Goal:
+            현재 weighted covariance estimate를 반환한다.
+        Input:
+            self는 ParticleFilter instance이다.
+        Output:
+            내부 covariance copy를 numpy array로 반환한다.
+        """
         return self._cov.copy()
 
     def effective_sample_size(self) -> float:
-        """Compute effective sample size (ESS)."""
+        """
+        Goal:
+            현재 particle weight 분포의 Effective Sample Size를 계산한다.
+        Input:
+            self는 normalized weights를 가진 ParticleFilter instance이다.
+        Output:
+            ESS 값을 float로 반환한다.
+        """
         return float(1.0 / np.sum(np.square(self.weights)))
 
     def _systematic_resample(self) -> None:
-        """Systematic resampling."""
+        """
+        Goal:
+            weight 분포에 따라 particle을 systematic resampling한다.
+        Input:
+            self는 particles와 weights를 가진 ParticleFilter instance이다.
+        Output:
+            없음. 내부 particles 배열이 resampled 결과로 교체된다.
+        """
         positions = (self.rng.random() + np.arange(self.num_particles)) / self.num_particles
         cumulative = np.cumsum(self.weights)
         indices = np.searchsorted(cumulative, positions, side="left")
         self.particles = self.particles[indices]
 
     def _refresh_moments(self) -> None:
+        """
+        Goal:
+            particle 집합으로부터 weighted mean과 covariance를 다시 계산한다.
+        Input:
+            self는 particles, weights, angle_indices를 가진 ParticleFilter instance이다.
+        Output:
+            없음. 내부 _state와 _cov가 최신 값으로 갱신된다.
+        """
         self._state, self._cov = weighted_mean_cov(
             self.particles,
             self.weights,

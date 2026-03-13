@@ -23,7 +23,14 @@ def run_pf(
     filter_override: str | None = None,
     output_dir_override: Path | None = None,
 ) -> dict[str, Any]:
-    """Run one configured estimator (PF now, EKF/InEKF later via filter config)."""
+    """
+    Goal:
+        YAML config를 읽어 benchmark 실행을 시작하고 핵심 결과를 CLI에 출력한다.
+    Input:
+        pf_config_path와 dataset_config_path는 config file 경로이고, mode_override/filter_override/output_dir_override는 optional runtime override이다.
+    Output:
+        run_estimation_benchmark가 만든 실행 결과 dict를 반환한다.
+    """
     pf_cfg = load_yaml_config(pf_config_path)
     ds_cfg = load_yaml_config(dataset_config_path)
 
@@ -57,6 +64,14 @@ def run_pf(
 
 
 def main() -> None:
+    """
+    Goal:
+        command line argument를 파싱해 PF benchmark 실행을 시작한다.
+    Input:
+        CLI argument로 pf-config, dataset-config, mode, filter, output-dir를 받는다.
+    Output:
+        없음. 파싱된 설정으로 run_pf를 호출한다.
+    """
     parser = argparse.ArgumentParser(description="Run Particle Filter benchmark pipeline")
     parser.add_argument("--pf-config", type=Path, default=Path("config/pf.yaml"))
     parser.add_argument("--dataset-config", type=Path, default=Path("config/dataset_config.yaml"))

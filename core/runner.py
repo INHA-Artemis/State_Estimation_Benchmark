@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 
 from core.estimator import EstimationResult, run_filter_sequence
-from datasets.factory import build_dataset_loader
+from dataset_loader.factory import build_dataset_loader
 from evaluation.benchmark import build_run_summary, save_summary_json
 from evaluation.metrics import compute_latency_only_metrics, compute_metrics
 from filters.pf import ParticleFilter
@@ -26,10 +26,26 @@ VALID_MODES = {"imu_only", "gps_only", "fused"}
 
 
 def _default_state_dim(pose_type: str) -> int:
+    """
+    Goal:
+        pose_type에 맞는 기본 state dimension을 정한다.
+    Input:
+        pose_type은 dataset이 사용하는 pose 표현 문자열이다.
+    Output:
+        6d이면 6, 그 외에는 3을 반환한다.
+    """
     return 6 if pose_type.lower() == "6d" else 3
 
 
 def _fit_vector(values: list[float], state_dim: int, default_value: float) -> np.ndarray:
+    """
+    Goal:
+        config에서 읽은 vector 길이를 state_dim에 맞게 정규화한다.
+    Input:
+        values는 원본 list이고, state_dim은 목표 길이이며, default_value는 빈 입력일 때 채울 값이다.
+    Output:
+        padding 또는 truncation이 적용된 numpy vector를 반환한다.
+    """
     arr = np.asarray(values, dtype=float).reshape(-1)
     if arr.size == state_dim:
         return arr
@@ -41,6 +57,14 @@ def _fit_vector(values: list[float], state_dim: int, default_value: float) -> np
 
 
 def _build_motion_model(pf_cfg: dict[str, Any], state_dim: int) -> PlanarVelocityYawRateModel:
+    """
+    Goal:
+        PF config에서 MotionModel instance를 생성한다.
+    Input:
+        pf_cfg는 benchmark/filter 관련 설정 dict이고, state_dim은 생성할 model의 state 크기이다.
+    Output:
+        process_noise_cov와 index 설정이 반영된 PlanarVelocityYawRateModel을 반환한다.
+    """
     motion_cfg = pf_cfg.get("motion_model", {})
     q_diag = _fit_vector(motion_cfg.get("process_noise_diag", [0.05, 0.05, 0.01]), state_dim, 0.01)
     yaw_default = 2 if state_dim == 3 else 5
@@ -54,6 +78,14 @@ def _build_motion_model(pf_cfg: dict[str, Any], state_dim: int) -> PlanarVelocit
 
 
 def _build_measurement_model(pf_cfg: dict[str, Any]) -> PositionMeasurementModel:
+    """
+    Goal:
+        PF config에서 position 기반 MeasurementModel instance를 생성한다.
+    Input:
+        pf_cfg는 measurement_model 설정을 포함한 dict이다.
+    Output:
+        position_indices와 measurement_noise_cov가 설정된 PositionMeasurementModel을 반환한다.
+    """
     meas_cfg = pf_cfg.get("measurement_model", {})
     indices = meas_cfg.get("position_indices", [0, 1])
     r_diag = np.asarray(meas_cfg.get("measurement_noise_diag", [1.0, 1.0]), dtype=float).reshape(-1)
@@ -68,6 +100,14 @@ def _build_filter(
     motion_model: PlanarVelocityYawRateModel,
     measurement_model: PositionMeasurementModel | None,
 ) -> tuple[str, ParticleFilter]:
+    """
+    Goal:
+        config에 맞는 filter implementation을 선택하고 초기 instance를 만든다.
+    Input:
+        pf_cfg는 filter 설정 dict이고, state_dim, motion_model, measurement_model은 생성에 필요한 dependency이다.
+    Output:
+        선택된 filter name과 생성된 ParticleFilter instance tuple을 반환한다.
+    """
     filter_cfg = pf_cfg.get("filter", {})
     filter_name = str(filter_cfg.get("name", "pf")).lower()
 
@@ -98,6 +138,15 @@ def _prepare_output_dir(
     mode: str,
     output_dir_override: str | Path | None = None,
 ) -> Path:
+    """
+    Goal:
+        결과 artifact를 저장할 output directory를 준비한다.
+    Input:
+        output_cfg는 저장 관련 설정 dict이고, filter_name/mode는 경로 이름 구성에 사용된다.
+        output_dir_override가 있으면 config 대신 해당 경로를 사용한다.
+    Output:
+        생성이 보장된 Path를 반환한다.
+    """
     base = Path(output_dir_override) if output_dir_override is not None else Path(output_cfg.get("dir", "outputs"))
     timestamped = bool(output_cfg.get("timestamped_subdir", True))
     if timestamped:
@@ -115,7 +164,14 @@ def run_estimation_benchmark(
     mode_override: str | None = None,
     output_dir_override: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Run one estimator benchmark and optionally save artifacts."""
+    """
+    Goal:
+        dataset loading부터 filter 실행, evaluation, visualization, artifact 저장까지 benchmark 한 번을 수행한다.
+    Input:
+        pf_cfg와 dataset_cfg는 실행 설정 dict이며, mode_override와 output_dir_override는 runtime override이다.
+    Output:
+        실행 metadata, metrics, artifact 경로, raw result 요약이 담긴 dict를 반환한다.
+    """
     mode = str(mode_override or dataset_cfg.get("mode", "fused")).lower()
     if mode not in VALID_MODES:
         raise ValueError(f"mode must be one of {sorted(VALID_MODES)}, got '{mode}'")

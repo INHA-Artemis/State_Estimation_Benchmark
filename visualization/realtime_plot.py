@@ -23,9 +23,13 @@ def save_trajectory_animation(
     title: str = "PF Trajectory Animation",
 ) -> Path:
     """
-    Save trajectory animation as GIF/MP4 depending on file extension.
-
-    MP4 requires ffmpeg backend. If MP4 writer fails, GIF fallback is created.
+    Goal:
+        trajectory 변화를 frame 단위 animation으로 저장한다.
+    Input:
+        timestamps, estimates, ground_truth는 animation 대상 배열이고, output_path는 저장 경로이다.
+        position_indices, gps_measurements, fps, tail_length, title은 animation 표현 방식을 제어한다.
+    Output:
+        저장된 animation file의 Path를 반환한다. MP4 저장 실패 시 GIF fallback이 사용될 수 있다.
     """
     import matplotlib.pyplot as plt
     from matplotlib.animation import FuncAnimation, PillowWriter
@@ -91,6 +95,14 @@ def save_trajectory_animation(
     ax.legend(loc="best")
 
     def _update(frame: int):
+        """
+        Goal:
+            animation의 현재 frame에 맞춰 line, marker, text artist를 갱신한다.
+        Input:
+            frame은 현재 animation frame index이다.
+        Output:
+            blit에 사용할 matplotlib artist list를 반환한다.
+        """
         start = max(0, frame - int(tail_length))
         gt_line.set_data(gt[start : frame + 1, ix], gt[start : frame + 1, iy])
         est_line.set_data(est[start : frame + 1, ix], est[start : frame + 1, iy])

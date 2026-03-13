@@ -92,7 +92,7 @@ PF 실행 (결과를 로컬 `./outputs`에 저장):
 
 ```bash
 docker run --rm \
-  -v "$(pwd)/outputs:/app/outputs" \
+  -v "$(pwd)/outputs:/workspace/outputs" \
   state-estimation-benchmark:latest
 ```
 
@@ -100,7 +100,7 @@ mode 변경 실행:
 
 ```bash
 docker run --rm \
-  -v "$(pwd)/outputs:/app/outputs" \
+  -v "$(pwd)/outputs:/workspace/outputs" \
   state-estimation-benchmark:latest \
   python run_pf.py --mode gps_only
 ```

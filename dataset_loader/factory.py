@@ -7,12 +7,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from datasets.dataset_base import DatasetLoader
-from datasets.dummy_loader import DummySequenceLoader
+from dataset_loader.dataset_base import DatasetLoader
+from dataset_loader.dummy_loader import DummySequenceLoader
 
 
 def build_dataset_loader(cfg: dict[str, Any]) -> DatasetLoader:
-    """Create dataset loader from config."""
+    """
+    Goal:
+        dataset_type 설정에 맞는 DatasetLoader를 선택해 생성한다.
+    Input:
+        cfg는 dataset_type과 loader별 세부 설정을 담은 dict이다.
+    Output:
+        선택된 concrete DatasetLoader instance를 반환한다.
+    """
     dataset_type = str(cfg.get("dataset_type", "dummy")).lower()
 
     if dataset_type == "dummy":
@@ -20,5 +27,5 @@ def build_dataset_loader(cfg: dict[str, Any]) -> DatasetLoader:
 
     raise ValueError(
         f"Unsupported dataset_type='{dataset_type}'. "
-        "Implement a loader and register it in datasets/factory.py."
+        "Implement a loader and register it in dataset_loader/factory.py."
     )

@@ -17,13 +17,28 @@ class MeasurementModel(ABC):
 
     @abstractmethod
     def likelihood(self, z: np.ndarray, states: np.ndarray) -> np.ndarray:
-        """Return measurement likelihood p(z|x) for each state sample."""
+        """
+        Goal:
+            measurement likelihood 계산 interface를 정의한다.
+        Input:
+            z는 measurement vector이고, states는 candidate state sample 배열이다.
+        Output:
+            각 state에 대한 likelihood numpy array를 반환해야 한다.
+        """
 
 
 class PositionMeasurementModel(MeasurementModel):
     """Gaussian position measurement model (e.g., GPS x-y)."""
 
     def __init__(self, position_indices: Sequence[int], measurement_noise_cov: np.ndarray) -> None:
+        """
+        Goal:
+            Gaussian position MeasurementModel에 필요한 noise parameter를 준비한다.
+        Input:
+            position_indices는 관측할 state index들이고, measurement_noise_cov는 measurement covariance matrix이다.
+        Output:
+            없음. inverse covariance와 normalization constant가 미리 계산된다.
+        """
         self.position_indices = tuple(int(i) for i in position_indices)
         self.R = np.asarray(measurement_noise_cov, dtype=float)
         self.dim = len(self.position_indices)
@@ -37,9 +52,25 @@ class PositionMeasurementModel(MeasurementModel):
         self.log_norm = -0.5 * (self.dim * np.log(2.0 * np.pi) + logdet)
 
     def likelihood(self, z: np.ndarray, states: np.ndarray) -> np.ndarray:
+        """
+        Goal:
+            position measurement에 대한 likelihood 값을 계산한다.
+        Input:
+            z는 관측 position vector이고, states는 candidate state sample 배열이다.
+        Output:
+            각 state sample에 대한 likelihood numpy array를 반환한다.
+        """
         return np.exp(self.log_likelihood(z, states))
 
     def log_likelihood(self, z: np.ndarray, states: np.ndarray) -> np.ndarray:
+        """
+        Goal:
+            position measurement에 대한 Gaussian log-likelihood를 계산한다.
+        Input:
+            z는 관측 position vector이고, states는 candidate state sample 배열이다.
+        Output:
+            각 state sample에 대한 log-likelihood numpy array를 반환한다.
+        """
         z = np.asarray(z, dtype=float).reshape(self.dim)
         predicted = states[:, self.position_indices]
         residual = predicted - z[None, :]
