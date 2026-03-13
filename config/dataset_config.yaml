@@ -1,0 +1,12 @@
+dataset_type: dummy
+pose_type: 2d # options: 2d, 6d
+mode: fused # options: imu_only, gps_only, fused
+
+sequence_length: 300
+dt: 0.1
+seed: 10
+
+use_imu: true
+use_gps: true
+imu_noise_std: [0.05, 0.02]
+gps_noise_std: [0.7, 0.7]

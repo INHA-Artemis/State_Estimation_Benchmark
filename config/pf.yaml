@@ -1,0 +1,19 @@
+num_particles: 500
+resample_threshold_ratio: 0.5
+seed: 7
+
+initialization:
+  # If pose_type=6d, set these to length 6 or rely on run-time defaults.
+  mean: [0.0, 0.0, 0.0]
+  cov_diag: [1.0, 1.0, 0.3]
+
+motion_model:
+  # state indices used by planar propagation
+  x_index: 0
+  y_index: 1
+  process_noise_diag: [0.02, 0.02, 0.005]
+
+measurement_model:
+  # GPS measures x,y
+  position_indices: [0, 1]
+  measurement_noise_diag: [0.7, 0.7]
