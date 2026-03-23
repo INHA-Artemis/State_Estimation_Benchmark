@@ -47,7 +47,7 @@ The objective of this project is to build a **modular Python benchmark library**
 기존 대표 레퍼런스들과 현재 프로젝트 구현 범위를 비교하면 아래와 같습니다.
 
 | 항목 \ Reference | [navlie](https://github.com/decargroup/navlie) | [FilterPy](https://github.com/rlabbe/filterpy) | [Stone Soup](https://stonesoup.readthedocs.io/en/v1.2/auto_tutorials/index.html) | [robot_localization](https://www.notion.so/4-Robot-Localization-31e5215b8741803cba0fc205c165a59e) | [DRIFT](https://github.com/UMich-CURLY/drift) | OURS |
-| --- | --- | --- | --- | --- | --- | --- |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Python 기반** | O | O | O | X | X | O |
 | **EKF** | O | O | O | O | X | O |
 | **UKF** | O | O | O | O | X | O |
@@ -107,7 +107,7 @@ PF resampling 알고리즘(multinomial, residual, systematic, stratified) 개념
 기준 데이터셋은 `EuRoC MAV`, 시퀀스는 `V1_01_easy`, 센서는 `imu` 기준입니다.
 
 | Filter | Dataset | RMSE (position) | Runtime (filter only) | Figure | Video |
-| --- | --- | ---: | ---: | --- | --- |
+| :---: | :---: | :---: | :---: | :---: | :---: |
 | KF | EuRoC Vicon Room 1 / V1_01_easy (imu) | TBD | TBD | `outputs/kf_trajectory_3d.png` | `outputs/kf_trajectory_3d.mp4` |
 | UKF | EuRoC Vicon Room 1 / V1_01_easy (imu) | TBD | TBD | `outputs/ukf_trajectory_3d.png` | `outputs/ukf_trajectory_3d.mp4` |
 | PF | EuRoC Vicon Room 1 / V1_01_easy (imu) | `0.3218` | `8.563 sec` | `outputs/pf_trajectory_3d.png` | `outputs/pf_trajectory_3d.mp4` |
