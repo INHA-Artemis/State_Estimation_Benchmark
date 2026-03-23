@@ -60,6 +60,16 @@ The objective of this project is to build a **modular Python benchmark library**
 | **GPS on/off** | X | X | X | X | X | O |
 
 
+## Supported Datasets
+
+현재 repository에서 지원하는 데이터셋 현황은 아래와 같습니다.
+
+- `EuRoC`: available
+- `KITTI`: TBD
+- `TUM`: TBD
+
+Stay tuned!
+
 ## Particle Filter 실행 방법
 
 현재 구현 기준으로 실제 실행 가능한 필터는 **PF**입니다.  
