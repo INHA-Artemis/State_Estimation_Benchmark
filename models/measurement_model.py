@@ -1,47 +1,57 @@
-# [협업 주석]
-# Goal: filter와 분리된 MeasurementModel abstraction을 제공한다.
-# What it does: likelihood interface와 Gaussian PositionMeasurementModel을 제공하여
-# measurement z에 대한 p(z|x) / log-likelihood를 계산한다.
-"""Measurement model interfaces and minimal implementations."""
-
-from __future__ import annotations
-
-from abc import ABC, abstractmethod
-from typing import Sequence
+from typing import Optional, Sequence
 
 import numpy as np
 
 
-class MeasurementModel(ABC):
-    """Abstract measurement model used by filters."""
+def h(x_t, indices: Optional[Sequence[int]] = None) -> np.ndarray:
+    """
+    측정 함수 h(x_t).
+    - indices가 있으면 해당 상태 성분만 측정값으로 사용
+    - indices가 없으면 상태 차원에 맞는 기본 위치 성분을 사용
+      * 2D state (len=3): [x, y]
+      * 3D/IMU state (len=6 or 9): [x, y, z]
+    """
+    x_t = np.asarray(x_t, dtype=float).reshape(-1)
 
-    @abstractmethod
-    def likelihood(self, z: np.ndarray, states: np.ndarray) -> np.ndarray:
-        """Return measurement likelihood p(z|x) for each state sample."""
+    if indices is None:
+        if x_t.size == 3:
+            indices = [0, 1]
+        elif x_t.size in (6, 9):
+            indices = [0, 1, 2]
+        else:
+            raise ValueError(
+                "indices is required for this state size. "
+                "Supported defaults are state length 3, 6, or 9."
+            )
+
+    return x_t[np.asarray(indices, dtype=int)]
 
 
-class PositionMeasurementModel(MeasurementModel):
-    """Gaussian position measurement model (e.g., GPS x-y)."""
+def measure(
+    x_t,
+    indices: Optional[Sequence[int]] = None,
+    v_t=None,
+    measurement_cov=None,
+    rng: Optional[np.random.Generator] = None,
+) -> np.ndarray:
+    """
+    측정 모델:
+        z_t = h(x_t) + v_t
+    """
+    z_nominal = h(x_t, indices=indices)
+    dim = z_nominal.size
 
-    def __init__(self, position_indices: Sequence[int], measurement_noise_cov: np.ndarray) -> None:
-        self.position_indices = tuple(int(i) for i in position_indices)
-        self.R = np.asarray(measurement_noise_cov, dtype=float)
-        self.dim = len(self.position_indices)
+    if v_t is not None:
+        noise = np.asarray(v_t, dtype=float).reshape(-1)
+        if noise.size != dim:
+            raise ValueError("v_t size must match measurement size.")
+    elif measurement_cov is not None:
+        cov = np.asarray(measurement_cov, dtype=float)
+        if cov.shape != (dim, dim):
+            raise ValueError("measurement_cov must be shape (meas_dim, meas_dim).")
+        generator = np.random.default_rng() if rng is None else rng
+        noise = generator.multivariate_normal(np.zeros(dim), cov)
+    else:
+        noise = np.zeros(dim, dtype=float)
 
-        if self.R.shape != (self.dim, self.dim):
-            raise ValueError(f"measurement_noise_cov must be {(self.dim, self.dim)}, got {self.R.shape}")
-        self.R_inv = np.linalg.inv(self.R)
-        sign, logdet = np.linalg.slogdet(self.R)
-        if sign <= 0:
-            raise ValueError("measurement noise covariance must be positive definite")
-        self.log_norm = -0.5 * (self.dim * np.log(2.0 * np.pi) + logdet)
-
-    def likelihood(self, z: np.ndarray, states: np.ndarray) -> np.ndarray:
-        return np.exp(self.log_likelihood(z, states))
-
-    def log_likelihood(self, z: np.ndarray, states: np.ndarray) -> np.ndarray:
-        z = np.asarray(z, dtype=float).reshape(self.dim)
-        predicted = states[:, self.position_indices]
-        residual = predicted - z[None, :]
-        maha = np.einsum("ni,ij,nj->n", residual, self.R_inv, residual)
-        return self.log_norm - 0.5 * maha
+    return z_nominal + noise

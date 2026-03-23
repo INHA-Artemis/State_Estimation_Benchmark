@@ -35,7 +35,7 @@ visualization:
   position_indices: [0, 1]
   save_animation: true
   animation:
-    format: gif # gif or mp4
+    format: mp4 # gif or mp4
     fps: 20
     tail_length: 80
 

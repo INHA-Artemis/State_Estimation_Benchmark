@@ -1,37 +1,24 @@
-# [협업 주석]
-# Goal: filter/model에서 공통으로 사용하는 수학 helper를 분리한다.
-# What it does: angle wrapping과 weighted mean/covariance 계산(angular state 보정 포함)을 제공한다.
-"""Small math helpers shared across modules."""
-
-from __future__ import annotations
-
-from typing import Iterable
-
 import numpy as np
 
 
-def wrap_angle(angle: np.ndarray | float) -> np.ndarray | float:
-    """Wrap angle(s) to [-pi, pi)."""
-    return (np.asarray(angle) + np.pi) % (2.0 * np.pi) - np.pi
+def _skew(v: np.ndarray) -> np.ndarray:
+    return np.array(
+        [
+            [0.0, -v[2], v[1]],
+            [v[2], 0.0, -v[0]],
+            [-v[1], v[0], 0.0],
+        ],
+        dtype=float,
+    )
 
 
-def weighted_mean_cov(
-    samples: np.ndarray,
-    weights: np.ndarray,
-    angle_indices: Iterable[int] | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Compute weighted mean/covariance with optional circular mean for angles."""
-    angle_set = set(angle_indices or [])
-    mean = np.average(samples, axis=0, weights=weights)
+def _exp_so3(phi: np.ndarray) -> np.ndarray:
+    theta = np.linalg.norm(phi)
+    if theta < 1e-12:
+        return np.eye(3)
+    axis = phi / theta
+    K = _skew(axis)
+    return np.eye(3) + np.sin(theta) * K + (1.0 - np.cos(theta)) * (K @ K)
 
-    for idx in angle_set:
-        s = np.sin(samples[:, idx])
-        c = np.cos(samples[:, idx])
-        mean[idx] = np.arctan2(np.average(s, weights=weights), np.average(c, weights=weights))
 
-    centered = samples - mean
-    for idx in angle_set:
-        centered[:, idx] = wrap_angle(centered[:, idx])
 
-    cov = centered.T @ (centered * weights[:, None])
-    return mean, cov
