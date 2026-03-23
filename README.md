@@ -62,11 +62,14 @@ The objective of this project is to build a **modular Python benchmark library**
 
 ## Supported Datasets
 
-현재 repository에서 지원하는 데이터셋 현황은 아래와 같습니다.
+현재 repository에서 지원하는 데이터셋 및 연동 예정 항목은 아래와 같습니다.
 
 - `EuRoC`: available
 - `KITTI`: TBD
 - `TUM`: TBD
+- `ROS1`: TBD
+- `ROS2`: TBD
+- `rosbag`: TBD
 
 Stay tuned!
 
