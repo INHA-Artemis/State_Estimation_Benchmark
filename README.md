@@ -103,15 +103,18 @@ PF resampling 알고리즘(multinomial, residual, systematic, stratified) 개념
 
 ### EuRoC 결과 비교 표
 
-동일한 EuRoC 데이터셋에 대해 필터별 성능을 비교할 때는 아래 표를 채워서 사용할 수 있습니다.
-기준 데이터셋은 `EuRoC MAV`, 시퀀스는 `V1_01_easy`, 센서는 `imu` 기준입니다.
+동일한 데이터셋 조건으로 비교합니다.
+- Dataset: `EuRoC MAV`
+- Sequence: `V1_01_easy`
+- Sensor basis: `imu`
+- Environment: `Vicon Room 1`
 
-| Filter | Dataset | RMSE (position) | Runtime (filter only) | Figure | Video |
+| Filter | RMSE (position) | Runtime (filter only) | Figure | Video | Note |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| KF | EuRoC Vicon Room 1 / V1_01_easy (imu) | TBD | TBD | `outputs/kf_trajectory_3d.png` | `outputs/kf_trajectory_3d.mp4` |
-| UKF | EuRoC Vicon Room 1 / V1_01_easy (imu) | TBD | TBD | `outputs/ukf_trajectory_3d.png` | `outputs/ukf_trajectory_3d.mp4` |
-| PF | EuRoC Vicon Room 1 / V1_01_easy (imu) | `0.3218` | `8.563 sec` | `outputs/pf_trajectory_3d.png` | `outputs/pf_trajectory_3d.mp4` |
-| InEKF | EuRoC Vicon Room 1 / V1_01_easy (imu) | TBD | TBD | `outputs/inekf_trajectory_3d.png` | `outputs/inekf_trajectory_3d.mp4` |
+| KF | TBD | TBD | `outputs/kf_trajectory_3d.png` | `outputs/kf_trajectory_3d.mp4` | - |
+| UKF | TBD | TBD | `outputs/ukf_trajectory_3d.png` | `outputs/ukf_trajectory_3d.mp4` | - |
+| PF | `0.3218` | `8.563 sec` | `outputs/pf_trajectory_3d.png` | `outputs/pf_trajectory_3d.mp4` | `Samples 2000` |
+| InEKF | TBD | TBD | `outputs/inekf_trajectory_3d.png` | `outputs/inekf_trajectory_3d.mp4` | - |
 
 ### 2) Docker 실행
 
