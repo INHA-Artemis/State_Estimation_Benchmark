@@ -1,3 +1,0 @@
-# [협업 주석]
-# Goal: EKF 전용 파라미터를 config로 관리한다.
-# What it does: state/observation noise, 초기 공분산, model index 등 EKF 설정값을 추후 정의한다.

@@ -14,7 +14,7 @@ class ParticleFilter:
     def __init__(
         self,
         pose_type: str = "2d",
-        mode: str = "fused",  # imi_only, gps_only, fused
+        mode: str = "fused",  # imu_only, gnss_only, fused
         num_particles: int = 500,
         resample_threshold_ratio: float = 0.5,
         seed: Optional[int] = None,
@@ -185,7 +185,7 @@ class ParticleFilter:
 
         if run_mode in ("imu_only", "fused"):
             self.predict(control, dt)
-        if run_mode in ("gps_only", "fused"):
+        if run_mode in ("gps_only", "gnss_only", "fused"):
             self.measurement_update(measurement)
 
         if self.effective_sample_size() < self.threshold:

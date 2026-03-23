@@ -1,15 +1,19 @@
 # [협업 주석]
-# Goal: dataset 선택과 실행 모드(imu_only/gps_only/fused)를 config로 제어한다.
-# What it does: dataset type, pose type, sensor 사용 여부, synthetic sequence/noise 파라미터를 정의한다.
-dataset_type: dummy
-pose_type: 2d # options: 2d, 6d
-mode: fused # options: imu_only, gps_only, fused
+# Goal: dataset 선택과 실행 모드(imu_only/gnss_only/fused)를 config로 제어한다.
+# What it does: dataset type, pose type, sensor 사용 여부, synthetic sequence/noise/csv 경로 파라미터를 정의한다.
+dataset_type: euroc # options: synthetic, euroc
+pose_type: 6d # options: 2d, 6d
+mode: fused # options: imu_only, gnss_only, fused
 
 sequence_length: 300
 dt: 0.1
 seed: 10
+generated_csv_path: outputs/euroc_6d.csv
+euroc_imu_csv: /euroc_dataset/imu0/data.csv
+euroc_gt_csv: /euroc_dataset/state_groundtruth_estimate0/data.csv
+euroc_use_gt_as_gnss: true
 
 use_imu: true
-use_gps: true
+use_gnss: true
 imu_noise_std: [0.05, 0.02]
-gps_noise_std: [0.7, 0.7]
+gnss_noise_std: [0.7, 0.7, 0.7]

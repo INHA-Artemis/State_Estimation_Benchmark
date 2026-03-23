@@ -1,44 +1,72 @@
-# [협업 주석]
 # Goal: Particle Filter 하이퍼파라미터와 model noise 설정을 선언적으로 관리한다.
 # What it does: particle 수, resampling 기준, initialization, motion/measurement noise,
 # evaluation/visualization/output 옵션을 정의한다.
 filter:
-  name: pf # future-ready: pf, ekf, inekf
+  name: pf # 현재 실제 동작 구현은 PF이며, 향후 ekf/inekf와 같은 이름으로 확장 가능하다.
 
-num_particles: 500
+# 입자 개수. 값이 클수록 posterior 근사가 안정적이지만 연산량과 메모리 사용량이 증가한다.
+num_particles: 2000
+# ESS(유효 샘플 수)가 num_particles * 이 비율보다 작아지면 resampling을 수행한다.
+# 값이 낮으면 resampling이 드물어지고, 값이 높으면 더 자주 resampling된다.
 resample_threshold_ratio: 0.5
+# PF 내부 난수 시드. 초기 입자 샘플링과 process noise 재현성에 사용된다.
 seed: 7
 
 initialization:
-  # If pose_type=6d, set these to length 6 or rely on run-time defaults.
+  # 초기 상태 평균. 2D면 [x, y, yaw], 6D 설정이면 런타임에서 [x, y, z, roll, pitch, yaw]로 해석된다.
+  # 길이가 부족하면 나머지는 0으로 패딩된다.
   mean: [0.0, 0.0, 0.0]
+  # 초기 입자 분산의 대각 성분. mean 주변으로 입자를 얼마나 넓게 퍼뜨릴지 결정한다.
+  # 값이 크면 초기 탐색 범위는 넓어지지만, 수렴까지 시간이 더 걸릴 수 있다.
   cov_diag: [1.0, 1.0, 0.3]
 
 motion_model:
-  # state indices used by planar propagation
+  # 2D planar propagation에서 x 위치로 해석할 상태 인덱스.
   x_index: 0
+  # 2D planar propagation에서 y 위치로 해석할 상태 인덱스.
   y_index: 1
+  # 예측 단계 후 각 상태축에 더해지는 process noise의 대각 성분.
+  # PF의 predict 단계에서 모든 particle에 독립적으로 주입된다.
   process_noise_diag: [0.02, 0.02, 0.005]
 
 measurement_model:
-  # GPS measures x,y
+  # measurement update에서 관측값과 비교할 상태 성분 인덱스.
+  # 2D에서는 보통 [x, y], 3D/6D에서는 런타임에서 [x, y, z]로 확장된다.
   position_indices: [0, 1]
+  # 관측 노이즈 공분산의 대각 성분.
+  # 값이 작을수록 측정을 더 강하게 신뢰하고, 값이 클수록 예측을 더 유지한다.
   measurement_noise_diag: [0.7, 0.7]
 
 evaluation:
+  # 평가 지표 계산 사용 여부.
   enabled: true
+  # 위치 오차 계산에 사용할 상태 인덱스.
   position_indices: [0, 1]
+  # yaw 오차를 별도 분석할 때 사용할 각도 인덱스.
   yaw_index: 2
 
 visualization:
+  # 궤적 시각화 기능 사용 여부.
   enabled: true
+  # 시각화에서 위치로 취급할 상태 인덱스.
   position_indices: [0, 1]
+  # 정적 3D PNG를 그릴 때 몇 step마다 한 점씩 사용할지 결정한다.
+  # EuRoC처럼 샘플 수가 많은 경우 선이 뭉개져 보이는 것을 줄인다.
+  downsample: 20
+  # 정적 3D 시점의 고도각과 방위각.
+  elev: 24
+  azim: 38
+  # 3D 그림과 함께 XY/XZ/YZ 2D projection 패널을 같이 그릴지 여부.
+  show_projections: true
+  # 애니메이션(mp4/gif) 저장 여부.
   save_animation: true
   animation:
-    format: mp4 # gif or mp4
-    fps: 20
-    tail_length: 80
+    format: mp4 # 출력 포맷. 현재 구현은 mp4 경로를 기준으로 저장한다.
+    fps: 500 # 애니메이션 재생 프레임 수.
+    tail_length: 80 # 애니메이션에서 최근 몇 step의 궤적 꼬리를 보여줄지 결정한다.
 
 output:
+  # 결과 파일 저장 기본 디렉터리.
   dir: outputs
+  # 실행 시각 기준 하위 디렉터리를 자동 생성할지 여부.
   timestamped_subdir: true
