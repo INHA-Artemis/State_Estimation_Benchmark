@@ -1,19 +1,73 @@
 # [협업 주석]
 # Goal: dataset 선택과 실행 모드(imu_only/gnss_only/fused)를 config로 제어한다.
-# What it does: dataset type, pose type, sensor 사용 여부, synthetic sequence/noise/csv 경로 파라미터를 정의한다.
-dataset_type: euroc # options: synthetic, euroc
+# What it does: dataset type, dataset 이름, 센서/GT 경로, synthetic sequence/noise,
+#               그리고 생성될 CSV 경로를 선언적으로 정의한다.
+
+# 사용할 dataset 종류를 선택한다.
+# synthetic: 내부 생성 궤적 사용
+# euroc: EuRoC csv 사용
+# rosbag: ROS1 .bag 또는 ROS2 bag(directory / metadata.yaml / .db3) 사용
+dataset_type: rosbag # options: synthetic, euroc, rosbag
+
+# 출력 파일명과 로그 표시에서 사용할 dataset 이름이다.
+# 비워두면 rosbag의 경우 bag 파일명(또는 ROS2 bag 디렉터리명)에서 자동으로 추론한다.
+dataset_name: circle
+
+# pose 표현 차원.
+# 2d: [x, y, yaw]
+# 6d: [x, y, z, roll, pitch, yaw]
 pose_type: 6d # options: 2d, 6d
+
+# 필터 실행 모드.
+# imu_only: IMU control만 사용
+# gnss_only: GNSS/position measurement만 사용
+# fused: 둘 다 사용
 mode: fused # options: imu_only, gnss_only, fused
 
-sequence_length: 300
-dt: 0.1
-seed: 10
-generated_csv_path: outputs/euroc_6d.csv
+# For synthetic dataset:
+sequence_length: 300 # 시퀀스 길이(타임스텝 수)
+dt: 0.1 # 타임스텝 간격(초)
+seed: 10 # 랜덤 시드 (재현성 위해)
+
+# 통합 dataset CSV 저장 경로.
+# 파일명이 generic한 경우(e.g. rosbag_6d.csv) 실행 시 dataset_name 기반으로 자동 보정될 수 있다. 
+# Have to change name here if you want to save multiple CSVs from the same dataset_type (e.g. different rosbag sequences).
+generated_csv_path: outputs/circle_dataset.csv
+
+# ===== EuRoC 설정 =====
 euroc_imu_csv: /euroc_dataset/imu0/data.csv
 euroc_gt_csv: /euroc_dataset/state_groundtruth_estimate0/data.csv
+# true면 GT position에 노이즈를 더해 GNSS measurement처럼 사용한다.
 euroc_use_gt_as_gnss: true
 
+# ===== ROS bag 설정 =====
+# ROS1: .bag 파일 경로
+# ROS2: bag 디렉터리 경로, metadata.yaml 경로, 또는 .db3 경로 모두 가능
+rosbag_path: /kaistvio_dataset/circle.bag
+
+# IMU topic 이름.
+# sensor_msgs/Imu 형태를 기대하며, linear_acceleration / angular_velocity 필드를 사용한다.
+rosbag_imu_topic: /mavros/imu/data
+
+# Ground-truth topic 이름.
+# pose-like 메시지(PoseStamped, PoseWithCovarianceStamped, Odometry.pose, TransformStamped)를 지원한다.
+rosbag_gt_topic: /pose_transformed
+
+# 6D control의 앞 3개 선형 항을 어떻게 만들지 선택한다.
+# accel: raw accelerometer 값을 그대로 사용
+# gt_velocity: GT position 차분으로 velocity를 만들어 사용
+# 주의: 현재 PF motion model은 raw accel보다 gt_velocity와 더 잘 맞는다.
+rosbag_linear_source: gt_velocity # options: accel, gt_velocity
+
+# true면 GT position에 노이즈를 더해 GNSS measurement처럼 사용한다.
+rosbag_use_gt_as_gnss: true
+
+# ===== 센서 사용 / 노이즈 설정 =====
 use_imu: true
 use_gnss: true
+
+# IMU 노이즈 표준편차. 현재 synthetic 쪽과 일부 필터 설정에서 사용된다.
 imu_noise_std: [0.05, 0.02]
+
+# GNSS(position measurement) 노이즈 표준편차 [x, y, z].
 gnss_noise_std: [0.7, 0.7, 0.7]

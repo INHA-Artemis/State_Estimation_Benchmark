@@ -62,16 +62,22 @@ The objective of this project is to build a **modular Python benchmark library**
 
 ## Supported Datasets
 
-현재 repository에서 지원하는 데이터셋 및 연동 예정 항목은 아래와 같습니다.
+현재 repository에서 지원하는 데이터셋은 아래와 같습니다.
 
 - `EuRoC`: available
+- `rosbag`: available
+  - `ROS1 .bag`: available
+  - `ROS2 bag (directory / metadata.yaml / .db3)`: available
 - `KITTI`: TBD
 - `TUM`: TBD
-- `ROS1`: TBD
-- `ROS2`: TBD
-- `rosbag`: TBD
 
-Stay tuned!
+### rosbag Example Dataset
+
+현재 rosbag 예시 데이터셋으로 [KAIST VIO Dataset](https://github.com/url-kaist/kaistviodataset/tree/main) 기반 ROS1 bag를 사용할 수 있습니다.
+
+권장 dataset 이름 예시:
+- `dataset_name: kaistVio`
+
 
 ## Particle Filter 실행 방법
 
@@ -90,7 +96,10 @@ python3 examples/run_pf.py
 config 경로 override 예시:
 
 ```bash
-python3 examples/run_pf.py   --dataset-config config/dataset_config.yaml   --pf-config config/pf.yaml   --output-dir outputs
+python3 examples/run_pf.py \
+  --dataset-config config/dataset_config.yaml \
+  --pf-config config/pf.yaml \
+  --output-dir outputs
 ```
 
 실행 후 콘솔 출력(기본):
@@ -99,13 +108,58 @@ python3 examples/run_pf.py   --dataset-config config/dataset_config.yaml   --pf-
 - `Steps`
 - `RMSE (position)`
 - `Plot saved`
+- `Error plot saved`
 - `Animation saved` 또는 `Animation skipped`
 
 실행 후 생성물(기본):
-- `outputs/euroc_6d.csv` 또는 `generated_csv_path`에 지정한 통합 dataset CSV
-- `outputs/pf_trajectory_2d.png` 또는 `outputs/pf_trajectory_3d.png`
-- `outputs/pf_trajectory_2d.mp4` 또는 `outputs/pf_trajectory_3d.mp4`  
-  단, `pf.yaml`에서 `visualization.save_animation: true` 이고 ffmpeg가 있어야 저장됩니다.
+- `outputs/<dataset_name>_dataset.csv` 또는 `generated_csv_path`에 지정한 통합 dataset CSV
+- `outputs/<dataset_name>_pf_estimates.csv`
+- `outputs/<dataset_name>_pf_trajectory.png`
+- `outputs/<dataset_name>_pf_position_error_norm.png`
+- `outputs/<dataset_name>_pf_trajectory.mp4` 또는 `outputs/<dataset_name>_pf_trajectory.gif`  
+  단, `pf.yaml`에서 `visualization.save_animation: true` 이어야 하며,
+  mp4 저장에는 `ffmpeg`, gif 저장에는 `Pillow` writer가 필요합니다.
+
+### 1-1) rosbag 사용 방법
+
+`dataset_config.yaml`에서 아래 항목만 맞게 바꾸면 새로운 rosbag을 바로 연결할 수 있습니다.
+
+```yaml
+dataset_type: rosbag
+dataset_name: kaistVio
+rosbag_path: /path/to/your_rosbag
+rosbag_imu_topic: /mavros/imu/data
+rosbag_gt_topic: /pose_transformed
+rosbag_linear_source: gt_velocity  # or accel
+rosbag_use_gt_as_gnss: true
+```
+
+설정 가이드:
+- `dataset_type`: `rosbag`으로 설정
+- `dataset_name`: 출력 파일명에 사용될 이름
+- `rosbag_path`:
+  - ROS1: `.bag` 파일 경로
+  - ROS2: bag 디렉터리, `metadata.yaml`, 또는 `.db3` 경로
+- `rosbag_imu_topic`: `sensor_msgs/Imu` topic 이름
+- `rosbag_gt_topic`: pose-like GT topic 이름
+- `rosbag_linear_source`:
+  - `gt_velocity`: GT position 차분으로 선형 속도 생성
+  - `accel`: raw accelerometer 사용
+
+현재 loader가 기대하는 메시지 형태:
+- IMU: `linear_acceleration`, `angular_velocity` 필드가 있는 `sensor_msgs/Imu`
+- GT: `PoseStamped`, `PoseWithCovarianceStamped`, `Odometry.pose`, `TransformStamped`
+
+예를 들어 KAIST VIO Dataset의 ROS1 bag를 사용할 때는 아래처럼 둘 수 있습니다.
+
+```yaml
+dataset_type: rosbag
+dataset_name: kaistVio
+rosbag_path: /kaistvio_dataset/circle.bag
+rosbag_imu_topic: /mavros/imu/data
+rosbag_gt_topic: /pose_transformed
+rosbag_linear_source: gt_velocity
+```
 
 ### PF Resampling Reference
 

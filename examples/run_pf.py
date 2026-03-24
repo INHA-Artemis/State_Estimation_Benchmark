@@ -5,18 +5,22 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
+
 # examples/에서 실행해도 루트 모듈 import가 되도록 프로젝트 루트를 sys.path에 추가한다.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from datasets.euroc_loader import load_euroc_dataset
+from datasets.rosbag_loader import load_rosbag_dataset
 from filters.particle_filter import ParticleFilter
 from utils.csv_dataset import load_dataset_from_csv, save_dataset_to_csv
 from utils.generate_gnss import generate_gnss_measurements
 from utils.generate_imu import generate_imu_controls
 from utils.math_utils import compute_rmse
-from utils.visualization import plot_results, save_trajectory_animation
+from utils.save_estimates import save_estimates_to_csv
+from utils.visualization import plot_position_error_norm, plot_results, save_trajectory_animation
 from utils.yaml_loader import load_yaml
 
 
@@ -29,18 +33,13 @@ def main() -> None:
     parser.add_argument("--output-dir", default=str(PROJECT_ROOT / "outputs"))
     args = parser.parse_args()
 
-    # 1) 실행에 필요한 dataset / filter 설정 파일을 읽는다.
     dataset_cfg = load_yaml(Path(args.dataset_config))
     pf_cfg = load_yaml(Path(args.pf_config))
 
-    # 2) 상태 표현 차원을 정규화한다.
-    #    config에서 6d라고 쓰면 내부 PF는 3d(x, y, z, roll, pitch, yaw) 표현으로 처리한다.
     pose_type = dataset_cfg.get("pose_type", "2d")
     if pose_type == "6d":
         pose_type = "3d"
 
-    # 3) 3D/6D 실행이면 measurement model이 최소 x,y,z를 보도록 보정한다.
-    #    EuRoC나 pseudo-GNSS 측정은 3축 위치를 사용하므로, position_indices와 noise 길이를 맞춘다.
     if pose_type == "3d":
         measurement_cfg = pf_cfg.setdefault("measurement_model", {})
         position_indices = list(measurement_cfg.get("position_indices", [0, 1]))
@@ -54,35 +53,46 @@ def main() -> None:
             measurement_noise.append(measurement_noise[-1])
         measurement_cfg["measurement_noise_diag"] = measurement_noise
 
-    # 4) 실행 모드를 정규화한다.
-    #    코드 내부에서는 gps_only 대신 gnss_only라는 이름을 사용한다.
     mode = dataset_cfg.get("mode", "fused")
     if mode == "gps_only":
         mode = "gnss_only"
         dataset_cfg["mode"] = mode
 
-    # 5) 중간 benchmark CSV 저장 경로를 절대경로로 만든다.
-    #    이후 모든 PF 실행은 이 통합 CSV 포맷을 기준으로 진행된다.
-    generated_csv_path = Path(dataset_cfg.get("generated_csv_path", PROJECT_ROOT / "outputs" / f"synthetic_{pose_type}.csv"))
-    if not generated_csv_path.is_absolute():
-        generated_csv_path = PROJECT_ROOT / generated_csv_path
+    if "rosbag_path" in dataset_cfg:
+        bag_path = Path(dataset_cfg["rosbag_path"]).expanduser()
+        if not bag_path.is_absolute():
+            bag_path = PROJECT_ROOT / bag_path
+        dataset_cfg["rosbag_path"] = bag_path
+
+    dataset_type = dataset_cfg.get("dataset_type", "synthetic")
+    dataset_name = _resolve_dataset_name(dataset_cfg, dataset_type)
+
+    generated_csv_path = dataset_cfg.get("generated_csv_path")
+    if generated_csv_path is None:
+        generated_csv_path = PROJECT_ROOT / "outputs" / f"{dataset_name}_dataset.csv"
+    else:
+        generated_csv_path = Path(generated_csv_path)
+        if not generated_csv_path.is_absolute():
+            generated_csv_path = PROJECT_ROOT / generated_csv_path
+        generic_names = {"synthetic_2d.csv", "synthetic_3d.csv", "synthetic_6d.csv", "euroc_6d.csv", "kaist_vio_6d.csv", "rosbag_6d.csv"}
+        if generated_csv_path.name in generic_names:
+            generated_csv_path = generated_csv_path.with_name(f"{dataset_name}_dataset.csv")
     dataset_cfg["generated_csv_path"] = generated_csv_path
 
-    # 6) 원본 데이터를 준비한다.
-    #    - synthetic: 코드에서 IMU / GNSS / GT를 생성한다.
-    #    - euroc: EuRoC IMU + GT를 읽어 PF가 이해하는 control / measurement / gt / dt로 변환한다.
-    dataset_type = dataset_cfg.get("dataset_type", "synthetic")
     if dataset_type == "euroc":
         pose_type = "3d"
         dataset_cfg["pose_type"] = "6d"
-        controls, measurements, gt, dt = load_euroc_dataset(dataset_cfg)
+        controls, measurements, gt, dt, timestamps_ns = load_euroc_dataset(dataset_cfg)
+    elif dataset_type in ("rosbag", "rosbag1", "rosbag2", "kaist_vio", "kaistvio", "kaist"):
+        pose_type = "3d"
+        dataset_cfg["pose_type"] = "6d"
+        controls, measurements, gt, dt, timestamps_ns = load_rosbag_dataset(dataset_cfg)
     else:
         controls, gt = generate_imu_controls(dataset_cfg, pose_type=pose_type)
         measurements = generate_gnss_measurements(dataset_cfg, pose_type=pose_type, gt=gt)
         dt = float(dataset_cfg.get("dt", 0.1))
+        timestamps_ns = (np.arange(len(gt), dtype=np.int64) * int(round(float(dt) * 1e9))).astype(np.int64)
 
-    # 7) 모든 데이터를 통합 CSV로 저장한다.
-    #    이 CSV는 한 step당 하나의 control / measurement / gt / dt를 담는다.
     csv_path = save_dataset_to_csv(
         generated_csv_path,
         pose_type=pose_type,
@@ -92,26 +102,19 @@ def main() -> None:
         gt=gt,
     )
 
-    # 8) 통합 CSV를 다시 읽어 PF 입력 포맷(list[dict])으로 변환한다.
-    #    각 row는 {control, measurement, dt, gt} 구조를 가진다.
     dataset, gt = load_dataset_from_csv(csv_path, pose_type=pose_type, mode=mode)
 
-    # 9) PF 객체를 config로부터 생성하고 초기 particle들을 샘플링한다.
-    #    initialization.mean / cov_diag를 기준으로 particle set이 초기화된다.
+    if np.isscalar(dt):
+        dt_values = np.full(len(dataset), float(dt), dtype=float)
+    else:
+        dt_values = np.asarray(dt, dtype=float).reshape(-1)
+
     pf = ParticleFilter.from_configs(dataset_cfg, pf_cfg)
 
-    # 10) PF를 전체 시퀀스에 대해 실행한다.
-    #     내부적으로 각 step마다 아래 순서를 반복한다.
-    #     a. predict(control, dt): 현재 control로 모든 particle을 전파한다.
-    #     b. measurement_update(measurement): 관측과의 오차로 particle weight를 갱신한다.
-    #     c. effective_sample_size()가 threshold보다 작으면 resampling한다.
-    #        즉, weight가 일부 particle에만 몰렸을 때 particle set을 다시 균등하게 재구성한다.
-    #     d. estimate_pose(): resampled/updated particle들의 가중평균으로 현재 pose를 출력한다.
     pf_start = time.perf_counter()
     estimates = pf.run(dataset)
     pf_runtime = time.perf_counter() - pf_start
 
-    # 11) 추정 결과와 GT 사이의 위치 RMSE를 계산해 콘솔에 출력한다.
     rmse = compute_rmse(estimates, gt, pose_type=pose_type)
     print(f"[PF] Pose type: {pose_type}")
     print(f"[PF] Dataset CSV: {csv_path}")
@@ -119,19 +122,33 @@ def main() -> None:
     print(f"[PF] RMSE (position): {rmse:.4f}")
     print(f"[PF] Runtime (filter only): {pf_runtime:.3f} sec")
 
-    # 12) 정적 PNG 결과를 저장한다.
-    #     시각화 옵션은 pf.yaml의 visualization 섹션에서 관리한다.
     out_dir = Path(args.output_dir)
-    plot_path = out_dir / f"pf_trajectory_{pose_type}.png"
-    plot_results(estimates, gt, pose_type=pose_type, save_path=plot_path, visual_cfg=pf_cfg.get("visualization", {}))
+    estimates_csv_path = out_dir / f"{dataset_name}_pf_estimates.csv"
+    saved_estimates_csv = save_estimates_to_csv(
+        estimates_csv_path,
+        estimates,
+        pose_type,
+        timestamps_ns=timestamps_ns,
+        dt_values=dt_values,
+    )
+    print(f"[PF] Estimates CSV saved: {saved_estimates_csv}")
+
+    vis_cfg = pf_cfg.get("visualization", {})
+
+    plot_path = out_dir / f"{dataset_name}_pf_trajectory.png"
+    plot_results(estimates, gt, pose_type=pose_type, save_path=plot_path, visual_cfg=vis_cfg)
     print(f"[PF] Plot saved: {plot_path}")
 
-    # 13) 설정이 허용되면 MP4 애니메이션도 생성한다.
-    #     애니메이션은 전체 궤적 대신 최근 tail_length step만 보여줘 정적 PNG보다 해석이 쉽다.
-    vis_cfg = pf_cfg.get("visualization", {})
+    error_plot_path = out_dir / f"{dataset_name}_pf_position_error_norm.png"
+    plot_position_error_norm(estimates, gt, pose_type=pose_type, save_path=error_plot_path, visual_cfg=vis_cfg)
+    print(f"[PF] Error plot saved: {error_plot_path}")
+
     anim_cfg = vis_cfg.get("animation", {})
-    if vis_cfg.get("save_animation", False) and anim_cfg.get("format", "mp4") == "mp4":
-        video_path = out_dir / f"pf_trajectory_{pose_type}.mp4"
+    if vis_cfg.get("save_animation", False):
+        anim_format = str(anim_cfg.get("format", "mp4")).lower()
+        if anim_format not in {"mp4", "gif"}:
+            raise ValueError("visualization.animation.format must be 'mp4' or 'gif'.")
+        video_path = out_dir / f"{dataset_name}_pf_trajectory.{anim_format}"
         saved = save_trajectory_animation(
             estimates,
             gt,
@@ -139,11 +156,13 @@ def main() -> None:
             save_path=video_path,
             fps=int(anim_cfg.get("fps", 20)),
             tail_length=int(anim_cfg.get("tail_length", 80)),
+            moving_average_window=int(vis_cfg.get("error_moving_average_window", 50)),
         )
         if saved:
             print(f"[PF] Animation saved: {video_path}")
         else:
-            print("[PF] Animation skipped: ffmpeg writer is not available.")
+            writer_name = "ffmpeg" if anim_format == "mp4" else "pillow"
+            print(f"[PF] Animation skipped: {writer_name} writer is not available.")
 
     total_runtime = time.perf_counter() - total_start
     print(f"[PF] Runtime (total): {total_runtime:.3f} sec")
@@ -151,3 +170,23 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def _resolve_dataset_name(dataset_cfg: dict, dataset_type: str) -> str:
+    configured = str(dataset_cfg.get("dataset_name", "")).strip()
+    if configured:
+        return configured.lower().replace(" ", "_")
+
+    if dataset_type in ("rosbag", "rosbag1", "rosbag2", "kaist_vio", "kaistvio", "kaist") and "rosbag_path" in dataset_cfg:
+        bag_path = Path(dataset_cfg["rosbag_path"])
+        if bag_path.name == "metadata.yaml":
+            candidate = bag_path.parent.name
+        elif bag_path.suffix == ".db3":
+            candidate = bag_path.parent.name
+        else:
+            candidate = bag_path.stem if bag_path.is_file() else bag_path.name
+        candidate = candidate.strip()
+        if candidate:
+            return candidate.lower().replace(" ", "_")
+
+    return str(dataset_type).strip().lower().replace(" ", "_") or "dataset"

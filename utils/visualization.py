@@ -6,6 +6,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import animation
 
+try:
+    from tqdm.auto import tqdm
+except ImportError:  # pragma: no cover
+    tqdm = None
+
 
 def plot_results(
     estimates: np.ndarray,
@@ -24,27 +29,18 @@ def plot_results(
     end_marker_size = 32.0
 
     if pose_type == "2d":
-        pos_err = np.linalg.norm(estimates[:, :2] - gt[:, :2], axis=1)
-        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-        axes[0].plot(gt[:, 0], gt[:, 1], label="GT", linewidth=linewidth_gt, alpha=alpha_gt)
-        axes[0].plot(estimates[:, 0], estimates[:, 1], label="PF", linewidth=linewidth_pf, alpha=alpha_pf)
-        axes[0].scatter(gt[0, 0], gt[0, 1], s=start_marker_size, color="tab:blue", marker="o", label="Start")
-        axes[0].scatter(gt[-1, 0], gt[-1, 1], s=end_marker_size, color="tab:blue", marker="x", label="End")
-        axes[0].set_title("2D Trajectory")
-        axes[0].set_xlabel("x")
-        axes[0].set_ylabel("y")
-        axes[0].axis("equal")
-        axes[0].grid(True, alpha=0.3)
-        axes[0].legend()
-
-        axes[1].plot(pos_err, color="tab:red", linewidth=1.5)
-        axes[1].set_title("Position Error Norm")
-        axes[1].set_xlabel("step")
-        axes[1].set_ylabel("error [m]")
-        axes[1].grid(True, alpha=0.3)
+        fig, ax = plt.subplots(1, 1, figsize=(6.5, 5.5))
+        ax.plot(gt[:, 0], gt[:, 1], label="GT", linewidth=linewidth_gt, alpha=alpha_gt)
+        ax.plot(estimates[:, 0], estimates[:, 1], label="PF", linewidth=linewidth_pf, alpha=alpha_pf)
+        ax.scatter(gt[0, 0], gt[0, 1], s=start_marker_size, color="tab:blue", marker="o", label="Start")
+        ax.scatter(gt[-1, 0], gt[-1, 1], s=end_marker_size, color="tab:blue", marker="x", label="End")
+        ax.set_title("2D Trajectory")
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.axis("equal")
+        ax.grid(True, alpha=0.3)
+        ax.legend()
     else:
-        pos_err = np.linalg.norm(estimates[:, :3] - gt[:, :3], axis=1)
         stride = max(1, int(visual_cfg.get("downsample", 1)))
         elev = float(visual_cfg.get("elev", 20.0))
         azim = float(visual_cfg.get("azim", 35.0))
@@ -60,9 +56,8 @@ def plot_results(
             ax_xz = fig.add_subplot(2, 2, 3)
             ax_yz = fig.add_subplot(2, 2, 4)
         else:
-            fig = plt.figure(figsize=(14, 5))
-            ax_traj = fig.add_subplot(1, 2, 1, projection="3d")
-            ax_err = fig.add_subplot(1, 2, 2)
+            fig = plt.figure(figsize=(7, 5.5))
+            ax_traj = fig.add_subplot(1, 1, 1, projection="3d")
 
         ax_traj.plot(gt_plot[:, 0], gt_plot[:, 1], gt_plot[:, 2], label="GT", linewidth=linewidth_gt, alpha=alpha_gt)
         ax_traj.plot(est_plot[:, 0], est_plot[:, 1], est_plot[:, 2], label="PF", linewidth=linewidth_pf, alpha=alpha_pf)
@@ -79,16 +74,38 @@ def plot_results(
             _plot_projection(ax_xy, gt_plot[:, 0], gt_plot[:, 1], est_plot[:, 0], est_plot[:, 1], "XY Projection", "x", "y")
             _plot_projection(ax_xz, gt_plot[:, 0], gt_plot[:, 2], est_plot[:, 0], est_plot[:, 2], "XZ Projection", "x", "z")
             _plot_projection(ax_yz, gt_plot[:, 1], gt_plot[:, 2], est_plot[:, 1], est_plot[:, 2], "YZ Projection", "y", "z")
-        else:
-            ax_err.plot(pos_err, color="tab:red", linewidth=1.5)
-            ax_err.set_title("Position Error Norm")
-            ax_err.set_xlabel("step")
-            ax_err.set_ylabel("error [m]")
-            ax_err.grid(True, alpha=0.3)
 
     save_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
     fig.savefig(save_path, dpi=dpi)
+    plt.close(fig)
+
+
+def plot_position_error_norm(
+    estimates: np.ndarray,
+    gt: np.ndarray,
+    pose_type: str,
+    save_path: Path,
+    visual_cfg: dict | None = None,
+) -> None:
+    visual_cfg = visual_cfg or {}
+    pos_dim = 2 if pose_type == "2d" else 3
+    pos_err = np.linalg.norm(estimates[:, :pos_dim] - gt[:, :pos_dim], axis=1)
+    moving_avg = _moving_average(pos_err, int(visual_cfg.get("error_moving_average_window", 50)))
+    median_err = float(np.median(pos_err)) if pos_err.size else 0.0
+
+    fig, ax = plt.subplots(1, 1, figsize=(10, 4.8))
+    ax.plot(pos_err, color="tab:red", linewidth=1.2, alpha=0.8, label="Position error norm")
+    ax.plot(moving_avg, color="black", linewidth=2.0, alpha=0.95, label="Moving average")
+    ax.set_title(f"Position Error Norm (median: {median_err:.4f} m)")
+    ax.set_xlabel("step")
+    ax.set_ylabel("error [m]")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=150)
     plt.close(fig)
 
 
@@ -119,21 +136,28 @@ def save_trajectory_animation(
     save_path: Path,
     fps: int = 20,
     tail_length: int = 80,
+    moving_average_window: int = 50,
 ) -> bool:
     if estimates.size == 0 or gt.size == 0:
         return False
-    if save_path.suffix.lower() != ".mp4":
-        raise ValueError("save_path must use .mp4 for MP4 export.")
-    if not animation.writers.is_available("ffmpeg"):
+
+    suffix = save_path.suffix.lower()
+    if suffix not in {".mp4", ".gif"}:
+        raise ValueError("save_path must use .mp4 or .gif for animation export.")
+    if suffix == ".mp4" and not animation.writers.is_available("ffmpeg"):
+        return False
+    if suffix == ".gif" and not animation.writers.is_available("pillow"):
         return False
 
     save_path.parent.mkdir(parents=True, exist_ok=True)
     frames = len(estimates)
     tail_length = max(1, int(tail_length))
     fps = max(1, int(fps))
+    moving_average_window = max(1, int(moving_average_window))
 
     if pose_type == "2d":
         pos_err = np.linalg.norm(estimates[:, :2] - gt[:, :2], axis=1)
+        moving_avg = _moving_average(pos_err, moving_average_window)
         fig, axes = plt.subplots(1, 2, figsize=(12, 5))
         ax_traj, ax_err = axes
 
@@ -148,15 +172,17 @@ def save_trajectory_animation(
         ax_err.set_ylabel("error [m]")
         ax_err.grid(True, alpha=0.3)
         ax_err.set_xlim(0, frames - 1)
-        ax_err.set_ylim(0.0, max(1e-6, float(np.max(pos_err)) * 1.1))
+        ax_err.set_ylim(0.0, max(1e-6, float(max(np.max(pos_err), np.max(moving_avg))) * 1.1))
 
         ax_traj.plot(gt[:, 0], gt[:, 1], color="tab:blue", alpha=0.25, linewidth=2.0, label="GT full")
         gt_line, = ax_traj.plot([], [], color="tab:blue", linewidth=2.0, label="GT")
         est_line, = ax_traj.plot([], [], color="tab:orange", linewidth=1.5, label="PF")
         gt_point, = ax_traj.plot([], [], marker="o", color="tab:blue")
         est_point, = ax_traj.plot([], [], marker="o", color="tab:orange")
-        err_line, = ax_err.plot([], [], color="tab:red", linewidth=1.5)
+        err_line, = ax_err.plot([], [], color="tab:red", linewidth=1.5, label="Error norm")
+        avg_line, = ax_err.plot([], [], color="black", linewidth=2.0, label="Moving average")
         ax_traj.legend()
+        ax_err.legend()
 
         margin = 0.5
         ax_traj.set_xlim(float(min(gt[:, 0].min(), estimates[:, 0].min()) - margin), float(max(gt[:, 0].max(), estimates[:, 0].max()) + margin))
@@ -171,10 +197,12 @@ def save_trajectory_animation(
             gt_point.set_data([gt[frame, 0]], [gt[frame, 1]])
             est_point.set_data([estimates[frame, 0]], [estimates[frame, 1]])
             err_line.set_data(np.arange(frame + 1), pos_err[: frame + 1])
-            return gt_line, est_line, gt_point, est_point, err_line
+            avg_line.set_data(np.arange(frame + 1), moving_avg[: frame + 1])
+            return gt_line, est_line, gt_point, est_point, err_line, avg_line
 
     else:
         pos_err = np.linalg.norm(estimates[:, :3] - gt[:, :3], axis=1)
+        moving_avg = _moving_average(pos_err, moving_average_window)
         fig = plt.figure(figsize=(14, 5))
         ax_traj = fig.add_subplot(1, 2, 1, projection="3d")
         ax_err = fig.add_subplot(1, 2, 2)
@@ -188,15 +216,17 @@ def save_trajectory_animation(
         ax_err.set_ylabel("error [m]")
         ax_err.grid(True, alpha=0.3)
         ax_err.set_xlim(0, frames - 1)
-        ax_err.set_ylim(0.0, max(1e-6, float(np.max(pos_err)) * 1.1))
+        ax_err.set_ylim(0.0, max(1e-6, float(max(np.max(pos_err), np.max(moving_avg))) * 1.1))
 
         ax_traj.plot(gt[:, 0], gt[:, 1], gt[:, 2], color="tab:blue", alpha=0.25, linewidth=2.0, label="GT full")
         gt_line, = ax_traj.plot([], [], [], color="tab:blue", linewidth=2.0, label="GT")
         est_line, = ax_traj.plot([], [], [], color="tab:orange", linewidth=1.5, label="PF")
         gt_point, = ax_traj.plot([], [], [], marker="o", color="tab:blue")
         est_point, = ax_traj.plot([], [], [], marker="o", color="tab:orange")
-        err_line, = ax_err.plot([], [], color="tab:red", linewidth=1.5)
+        err_line, = ax_err.plot([], [], color="tab:red", linewidth=1.5, label="Error norm")
+        avg_line, = ax_err.plot([], [], color="black", linewidth=2.0, label="Moving average")
         ax_traj.legend()
+        ax_err.legend()
 
         margin = 0.5
         ax_traj.set_xlim(float(min(gt[:, 0].min(), estimates[:, 0].min()) - margin), float(max(gt[:, 0].max(), estimates[:, 0].max()) + margin))
@@ -216,10 +246,50 @@ def save_trajectory_animation(
             est_point.set_data([estimates[frame, 0]], [estimates[frame, 1]])
             est_point.set_3d_properties([estimates[frame, 2]])
             err_line.set_data(np.arange(frame + 1), pos_err[: frame + 1])
-            return gt_line, est_line, gt_point, est_point, err_line
+            avg_line.set_data(np.arange(frame + 1), moving_avg[: frame + 1])
+            return gt_line, est_line, gt_point, est_point, err_line, avg_line
 
     ani = animation.FuncAnimation(fig, update, frames=frames, interval=1000 / fps, blit=False)
-    writer = animation.FFMpegWriter(fps=fps, codec="libx264", bitrate=1800)
-    ani.save(save_path, writer=writer)
-    plt.close(fig)
+    if suffix == ".mp4":
+        writer = animation.FFMpegWriter(fps=fps, codec="libx264", bitrate=1800)
+    else:
+        writer = animation.PillowWriter(fps=fps)
+
+    progress_bar = None
+
+    def progress_callback(frame_idx: int, total_frames: int) -> None:
+        nonlocal progress_bar
+        if tqdm is None:
+            return
+        if progress_bar is None:
+            total = total_frames if total_frames and total_frames > 0 else frames
+            progress_bar = tqdm(total=total, desc=f"Saving {save_path.name}", unit="frame")
+        target_n = min(frame_idx + 1, progress_bar.total)
+        delta = target_n - progress_bar.n
+        if delta > 0:
+            progress_bar.update(delta)
+
+    try:
+        ani.save(save_path, writer=writer, progress_callback=progress_callback)
+    finally:
+        if progress_bar is not None:
+            if progress_bar.n < progress_bar.total:
+                progress_bar.update(progress_bar.total - progress_bar.n)
+            progress_bar.close()
+        plt.close(fig)
     return True
+
+
+def _moving_average(values: np.ndarray, window: int) -> np.ndarray:
+    values = np.asarray(values, dtype=float).reshape(-1)
+    if values.size == 0:
+        return values.copy()
+    window = max(1, min(int(window), values.size))
+    kernel = np.ones(window, dtype=float) / float(window)
+    averaged = np.convolve(values, kernel, mode="valid")
+    if window == 1:
+        return averaged
+    prefix = np.empty(window - 1, dtype=float)
+    cumsum = np.cumsum(values[: window - 1], dtype=float)
+    prefix[:] = cumsum / np.arange(1, window, dtype=float)
+    return np.concatenate([prefix, averaged])

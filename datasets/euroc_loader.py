@@ -8,7 +8,7 @@ import numpy as np
 from utils.rotation_utils import _rot_to_rpy
 
 
-def load_euroc_dataset(dataset_cfg: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def load_euroc_dataset(dataset_cfg: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     imu_csv = Path(dataset_cfg["euroc_imu_csv"])
     gt_csv = Path(dataset_cfg["euroc_gt_csv"])
 
@@ -43,7 +43,7 @@ def load_euroc_dataset(dataset_cfg: dict) -> tuple[np.ndarray, np.ndarray, np.nd
         dt[0] = float(dataset_cfg.get("dt", 0.005))
 
     measurements = _build_position_measurements(gt, dataset_cfg)
-    return controls, measurements, gt, dt
+    return controls, measurements, gt, dt, gt_timestamps
 
 
 def _load_imu_csv(csv_path: Path) -> tuple[np.ndarray, np.ndarray]:
