@@ -68,15 +68,10 @@ The objective of this project is to build a **modular Python benchmark library**
 - `rosbag`: available
   - `ROS1 .bag`: available
   - `ROS2 bag (directory / metadata.yaml / .db3)`: available
+  - [KAIST VIO](https://github.com/url-kaist/kaistviodataset/tree/main): available
+  - [M2DGR](https://github.com/SJTU-ViSYS/M2DGR?tab=readme-ov-file#dataset-sequences): available
 - `KITTI`: TBD
 - `TUM`: TBD
-
-### rosbag Example Dataset
-
-현재 rosbag 예시 데이터셋으로 [KAIST VIO Dataset](https://github.com/url-kaist/kaistviodataset/tree/main) 기반 ROS1 bag를 사용할 수 있습니다.
-
-권장 dataset 이름 예시:
-- `dataset_name: kaistVio`
 
 
 ## Particle Filter 실행 방법
