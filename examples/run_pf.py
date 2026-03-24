@@ -13,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from datasets.euroc_loader import load_euroc_dataset
+from datasets.m2dgr_loader import load_m2dgr_dataset
 from datasets.rosbag_loader import load_rosbag_dataset
 from filters.particle_filter import ParticleFilter
 from utils.csv_dataset import load_dataset_from_csv, save_dataset_to_csv
@@ -64,6 +65,18 @@ def main() -> None:
             bag_path = PROJECT_ROOT / bag_path
         dataset_cfg["rosbag_path"] = bag_path
 
+    if "m2dgr_bag_path" in dataset_cfg:
+        bag_path = Path(dataset_cfg["m2dgr_bag_path"]).expanduser()
+        if not bag_path.is_absolute():
+            bag_path = PROJECT_ROOT / bag_path
+        dataset_cfg["m2dgr_bag_path"] = bag_path
+
+    if "m2dgr_gt_txt_path" in dataset_cfg:
+        gt_path = Path(dataset_cfg["m2dgr_gt_txt_path"]).expanduser()
+        if not gt_path.is_absolute():
+            gt_path = PROJECT_ROOT / gt_path
+        dataset_cfg["m2dgr_gt_txt_path"] = gt_path
+
     dataset_type = dataset_cfg.get("dataset_type", "synthetic")
     dataset_name = _resolve_dataset_name(dataset_cfg, dataset_type)
 
@@ -74,7 +87,7 @@ def main() -> None:
         generated_csv_path = Path(generated_csv_path)
         if not generated_csv_path.is_absolute():
             generated_csv_path = PROJECT_ROOT / generated_csv_path
-        generic_names = {"synthetic_2d.csv", "synthetic_3d.csv", "synthetic_6d.csv", "euroc_6d.csv", "kaist_vio_6d.csv", "rosbag_6d.csv"}
+        generic_names = {"synthetic_2d.csv", "synthetic_3d.csv", "synthetic_6d.csv", "euroc_6d.csv", "kaist_vio_6d.csv", "rosbag_6d.csv", "m2dgr_6d.csv"}
         if generated_csv_path.name in generic_names:
             generated_csv_path = generated_csv_path.with_name(f"{dataset_name}_dataset.csv")
     dataset_cfg["generated_csv_path"] = generated_csv_path
@@ -87,6 +100,10 @@ def main() -> None:
         pose_type = "3d"
         dataset_cfg["pose_type"] = "6d"
         controls, measurements, gt, dt, timestamps_ns = load_rosbag_dataset(dataset_cfg)
+    elif dataset_type in ("m2dgr",):
+        pose_type = "3d"
+        dataset_cfg["pose_type"] = "6d"
+        controls, measurements, gt, dt, timestamps_ns = load_m2dgr_dataset(dataset_cfg)
     else:
         controls, gt = generate_imu_controls(dataset_cfg, pose_type=pose_type)
         measurements = generate_gnss_measurements(dataset_cfg, pose_type=pose_type, gt=gt)
@@ -168,10 +185,6 @@ def main() -> None:
     print(f"[PF] Runtime (total): {total_runtime:.3f} sec")
 
 
-if __name__ == "__main__":
-    main()
-
-
 def _resolve_dataset_name(dataset_cfg: dict, dataset_type: str) -> str:
     configured = str(dataset_cfg.get("dataset_name", "")).strip()
     if configured:
@@ -189,4 +202,15 @@ def _resolve_dataset_name(dataset_cfg: dict, dataset_type: str) -> str:
         if candidate:
             return candidate.lower().replace(" ", "_")
 
+    if dataset_type == "m2dgr" and "m2dgr_bag_path" in dataset_cfg:
+        bag_path = Path(dataset_cfg["m2dgr_bag_path"])
+        candidate = bag_path.stem if bag_path.is_file() else bag_path.name
+        candidate = candidate.strip()
+        if candidate:
+            return candidate.lower().replace(" ", "_")
+
     return str(dataset_type).strip().lower().replace(" ", "_") or "dataset"
+
+
+if __name__ == "__main__":
+    main()
