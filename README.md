@@ -362,6 +362,50 @@ In particular:
 - they normalize measurement config automatically for 3D runs when needed
 - they keep outputs identical in structure to PF outputs
 
+## Docker Usage
+
+Build the image:
+
+```bash
+docker build -t state-estimation-benchmark:latest .
+```
+
+Run the default container command:
+- the current `Dockerfile` default command runs PF
+
+```bash
+docker run --rm   -v "$(pwd)/outputs:/app/outputs"   state-estimation-benchmark:latest
+```
+
+Run PF explicitly:
+
+```bash
+docker run --rm   -v "$(pwd)/outputs:/app/outputs"   state-estimation-benchmark:latest   python3 examples/run_pf.py
+```
+
+Run EKF:
+
+```bash
+docker run --rm   -v "$(pwd)/outputs:/app/outputs"   state-estimation-benchmark:latest   python3 examples/run_ekf.py
+```
+
+Run UKF:
+
+```bash
+docker run --rm   -v "$(pwd)/outputs:/app/outputs"   state-estimation-benchmark:latest   python3 examples/run_ukf.py
+```
+
+Run with explicit config overrides:
+
+```bash
+docker run --rm   -v "$(pwd)/outputs:/app/outputs"   -v "$(pwd)/config:/app/config"   state-estimation-benchmark:latest   python3 examples/run_ekf.py   --dataset-config /app/config/dataset_config.yaml   --ekf-config /app/config/ekf.yaml   --output-dir /app/outputs
+```
+
+Notes:
+- mount `outputs` if you want result files on the host machine
+- the image installs `ffmpeg`, so mp4 animation export can work inside the container
+- if your dataset paths are outside the repository, mount those paths into the container as well
+
 ## References
 
 The implementation is inspired by existing libraries and tutorials:
