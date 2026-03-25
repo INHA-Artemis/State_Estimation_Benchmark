@@ -1,211 +1,315 @@
 # IMU/GNSS State Estimation Benchmark Library
 
-This project provides a **Python-based benchmark library for IMU/GNSS state estimation algorithms**.  
-The goal is to implement and compare multiple filtering methods under a **unified and modular interface**.
+This repository is a Python benchmark library for IMU/GNSS state estimation algorithms.
+It provides a unified pipeline for loading datasets, generating a common CSV representation, running a filter, and saving plots, error curves, animations, and estimate CSV files.
 
-## Features
+## Overview
 
-- Implementation of multiple state estimation algorithms:
-  - Extended Kalman Filter (**EKF**)
-  - Unscented Kalman Filter (**UKF**)
-  - Particle Filter (**PF**)
-  - Invariant Extended Kalman Filter (**InEKF**)
+Implemented filters:
+- Extended Kalman Filter (EKF)
+- Unscented Kalman Filter (UKF)
+- Particle Filter (PF)
 
-- **Unified interface** for all filters
-- Easy configuration:
-  - IMU on/off
-  - GNSS on/off
-  - Filter parameter tuning
-- **Real-time estimation visualization**
-- **Performance analysis and comparison across datasets**
+Current state representations:
+- `2d`: `[x, y, yaw]`
+- `6d`: `[x, y, z, roll, pitch, yaw]`
 
-## State Models
+Supported dataset sources:
+- `synthetic`
+- `euroc`
+- `rosbag`
+- `m2dgr`
 
-The library supports two state representations:
+## Implementation Notes
 
-- **3D model**
-  
-  \[
-  (x, y, \psi)
-  \]
+The EKF, UKF, and PF implementations in this repository are written with **NumPy-based array operations**.
+This is the same design direction used by the particle filter path in this repository.
 
-- **6D model**
+What that means in practice:
+- state, covariance, particles, measurements, and controls are handled as NumPy arrays
+- linear algebra is computed with `numpy.linalg`
+- dataset preparation and evaluation also use NumPy arrays end-to-end
+- no external Kalman filtering library is required for EKF or UKF execution
 
-  Full 6-DoF state estimation.
+The EKF and UKF were intentionally kept simple to match the repository style used by PF:
+- reuse existing files under `utils`, `models`, and `datasets`
+- keep the runner/output flow identical to PF
+- save the same kinds of result files with only the estimator name changed
 
-## Goal
+## Repository Structure
 
-The objective of this project is to build a **modular Python benchmark library** that:
+Main files for Kalman filters:
+- `config/ekf.yaml`
+- `config/ukf.yaml`
+- `examples/run_ekf.py`
+- `examples/run_ukf.py`
+- `filters/estimated_kalman_filter.py`
+- `filters/unscented_kalman_filter.py`
 
-1. Implements EKF, UKF, PF, and InEKF under a common interface  
-2. Supports flexible sensor configurations (IMU/GNSS on/off)  
-3. Provides clear visualization and performance evaluation tools  
-4. Enables easy comparison across multiple datasets  
+Shared files reused by PF, EKF, and UKF:
+- `config/dataset_config.yaml`
+- `datasets/euroc_loader.py`
+- `datasets/m2dgr_loader.py`
+- `datasets/rosbag_loader.py`
+- `utils/csv_dataset.py`
+- `utils/generate_gnss.py`
+- `utils/generate_imu.py`
+- `utils/math_utils.py`
+- `utils/save_estimates.py`
+- `utils/visualization.py`
+- `utils/yaml_loader.py`
+- `models/state_model.py`
+- `models/measurement_model.py`
 
-## Reference Comparison
-
-기존 대표 레퍼런스들과 현재 프로젝트 구현 범위를 비교하면 아래와 같습니다.
-
-| 항목 \ Reference | [navlie](https://github.com/decargroup/navlie) | [FilterPy](https://github.com/rlabbe/filterpy) | [Stone Soup](https://stonesoup.readthedocs.io/en/v1.2/auto_tutorials/index.html) | [robot_localization](https://www.notion.so/4-Robot-Localization-31e5215b8741803cba0fc205c165a59e) | [DRIFT](https://github.com/UMich-CURLY/drift) | OURS |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Python 기반** | O | O | O | X | X | O |
-| **EKF** | O | O | O | O | X | O |
-| **UKF** | O | O | O | O | X | O |
-| **PF** | X | O | O | X | X | O |
-| **InEKF** | X | X | X | X | O | O |
-| **실시간 estimation visualization** | X | X | X | X | X | O |
-| **IMU 관련 모델/입력 지원** | O | X | X | O | O | O |
-| **GPS 관련 처리/연동** | X | X | X | O | X | O |
-| **IMU on/off** | X | X | X | X | X | O |
-| **GPS on/off** | X | X | X | X | X | O |
-
-
-## Supported Datasets
-
-현재 repository에서 지원하는 데이터셋은 아래와 같습니다.
-
-- `EuRoC`: available
-- `rosbag`: available
-  - `ROS1 .bag`: available
-  - `ROS2 bag (directory / metadata.yaml / .db3)`: available
-  - [KAIST VIO](https://github.com/url-kaist/kaistviodataset/tree/main): available
-  - [M2DGR](https://github.com/SJTU-ViSYS/M2DGR?tab=readme-ov-file#dataset-sequences): available
-- `KITTI`: TBD
-- `TUM`: TBD
-
-
-## Particle Filter 실행 방법
-
-현재 구현 기준으로 실제 실행 가능한 필터는 **PF**입니다.  
-(`--filter ekf`, `--filter inekf`는 구조만 준비되어 있고 아직 구현 전입니다.)
-
-### 1) Local 실행
+## Installation
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+## Common Execution Flow
+
+All filters follow the same high-level flow:
+1. Read `config/dataset_config.yaml`
+2. Read the filter-specific config file
+3. Load or generate controls, measurements, ground truth, and timestamps
+4. Save a unified dataset CSV
+5. Run the filter
+6. Save estimate CSV, trajectory plot, error plot, and optional animation
+
+## How To Run Kalman Filters
+
+Run EKF:
+
+```bash
+cd /workspace/State_Estimation_Benchmark
+python3 examples/run_ekf.py
+```
+
+Run UKF:
+
+```bash
+cd /workspace/State_Estimation_Benchmark
+python3 examples/run_ukf.py
+```
+
+Run PF:
+
+```bash
+cd /workspace/State_Estimation_Benchmark
 python3 examples/run_pf.py
 ```
 
-config 경로 override 예시:
+Override config paths explicitly:
 
 ```bash
+python3 examples/run_ekf.py \
+  --dataset-config config/dataset_config.yaml \
+  --ekf-config config/ekf.yaml \
+  --output-dir outputs
+
+python3 examples/run_ukf.py \
+  --dataset-config config/dataset_config.yaml \
+  --ukf-config config/ukf.yaml \
+  --output-dir outputs
+
 python3 examples/run_pf.py \
   --dataset-config config/dataset_config.yaml \
   --pf-config config/pf.yaml \
   --output-dir outputs
 ```
 
-실행 후 콘솔 출력(기본):
-- `Pose type`
-- `Dataset CSV`
-- `Steps`
-- `RMSE (position)`
-- `Plot saved`
-- `Error plot saved`
-- `Animation saved` 또는 `Animation skipped`
+## Configuration
 
-실행 후 생성물(기본):
-- `outputs/<dataset_name>_dataset.csv` 또는 `generated_csv_path`에 지정한 통합 dataset CSV
-- `outputs/<dataset_name>_pf_estimates.csv`
-- `outputs/<dataset_name>_pf_trajectory.png`
-- `outputs/<dataset_name>_pf_position_error_norm.png`
-- `outputs/<dataset_name>_pf_trajectory.mp4` 또는 `outputs/<dataset_name>_pf_trajectory.gif`  
-  단, `pf.yaml`에서 `visualization.save_animation: true` 이어야 하며,
-  mp4 저장에는 `ffmpeg`, gif 저장에는 `Pillow` writer가 필요합니다.
+### Dataset Config
 
-### 1-1) rosbag 사용 방법
+The shared dataset configuration is:
+- `config/dataset_config.yaml`
 
-`dataset_config.yaml`에서 아래 항목만 맞게 바꾸면 새로운 rosbag을 바로 연결할 수 있습니다.
+Important fields:
+- `dataset_type`: `synthetic`, `euroc`, `rosbag`, `m2dgr`
+- `dataset_name`: used in output filenames
+- `pose_type`: `2d` or `6d`
+- `mode`: `imu_only`, `gnss_only`, `fused`
+- `generated_csv_path`: path to the unified dataset CSV
+
+Dataset-specific sections are already included in the file for:
+- EuRoC
+- ROS bag
+- M2DGR
+- synthetic generation
+
+### Filter Configs
+
+PF:
+- `config/pf.yaml`
+
+EKF:
+- `config/ekf.yaml`
+
+UKF:
+- `config/ukf.yaml`
+
+Common filter config sections:
+- `initialization`
+- `motion_model`
+- `measurement_model`
+- `evaluation`
+- `visualization`
+- `output`
+
+UKF-only section:
+- `sigma_points`
+
+## Dataset Examples
+
+### EuRoC
+
+Example dataset config values:
+
+```yaml
+dataset_type: euroc
+dataset_name: euroc
+pose_type: 6d
+mode: fused
+generated_csv_path: outputs/euroc.csv
+
+euroc_imu_csv: /path/to/euroc/mav0/imu0/data.csv
+euroc_gt_csv: /path/to/euroc/mav0/state_groundtruth_estimate0/data.csv
+euroc_use_gt_as_gnss: true
+
+gnss_noise_std: [0.7, 0.7, 0.7]
+```
+
+Run:
+
+```bash
+python3 examples/run_ekf.py
+python3 examples/run_ukf.py
+python3 examples/run_pf.py
+```
+
+### M2DGR
+
+Example dataset config values:
+
+```yaml
+dataset_type: m2dgr
+dataset_name: street_01
+pose_type: 6d
+mode: fused
+generated_csv_path: outputs/m2dgr.csv
+
+m2dgr_bag_path: /m2dgr_dataset/M2DGR/street_01.bag
+m2dgr_gt_txt_path: /m2dgr_dataset/M2DGR/street_01.txt
+m2dgr_imu_topic: /handsfree/imu
+m2dgr_gnss_topic: /ublox/fix
+m2dgr_linear_source: gt_velocity
+m2dgr_use_gt_as_gnss: false
+
+gnss_noise_std: [0.7, 0.7, 0.7]
+```
+
+Run:
+
+```bash
+python3 examples/run_ekf.py
+python3 examples/run_ukf.py
+python3 examples/run_pf.py
+```
+
+### ROS Bag
+
+Example dataset config values:
 
 ```yaml
 dataset_type: rosbag
-dataset_name: kaistVio
+dataset_name: kaistvio
+pose_type: 6d
+mode: fused
+
 rosbag_path: /path/to/your_rosbag
 rosbag_imu_topic: /mavros/imu/data
 rosbag_gt_topic: /pose_transformed
-rosbag_linear_source: gt_velocity  # or accel
+rosbag_linear_source: gt_velocity
 rosbag_use_gt_as_gnss: true
 ```
 
-설정 가이드:
-- `dataset_type`: `rosbag`으로 설정
-- `dataset_name`: 출력 파일명에 사용될 이름
-- `rosbag_path`:
-  - ROS1: `.bag` 파일 경로
-  - ROS2: bag 디렉터리, `metadata.yaml`, 또는 `.db3` 경로
-- `rosbag_imu_topic`: `sensor_msgs/Imu` topic 이름
-- `rosbag_gt_topic`: pose-like GT topic 이름
-- `rosbag_linear_source`:
-  - `gt_velocity`: GT position 차분으로 선형 속도 생성
-  - `accel`: raw accelerometer 사용
+Supported path formats:
+- ROS1 `.bag`
+- ROS2 bag directory
+- ROS2 `metadata.yaml`
+- ROS2 `.db3`
 
-현재 loader가 기대하는 메시지 형태:
-- IMU: `linear_acceleration`, `angular_velocity` 필드가 있는 `sensor_msgs/Imu`
-- GT: `PoseStamped`, `PoseWithCovarianceStamped`, `Odometry.pose`, `TransformStamped`
+### Synthetic
 
-예를 들어 KAIST VIO Dataset의 ROS1 bag를 사용할 때는 아래처럼 둘 수 있습니다.
+Example dataset config values:
 
 ```yaml
-dataset_type: rosbag
-dataset_name: kaistVio
-rosbag_path: /kaistvio_dataset/circle.bag
-rosbag_imu_topic: /mavros/imu/data
-rosbag_gt_topic: /pose_transformed
-rosbag_linear_source: gt_velocity
+dataset_type: synthetic
+dataset_name: synthetic
+pose_type: 2d
+mode: fused
+sequence_length: 300
+dt: 0.1
+seed: 10
 ```
 
-### PF Resampling Reference
+## Output Files
 
-PF resampling 알고리즘(multinomial, residual, systematic, stratified) 개념을 정리할 때는 아래 자료를 참고할 수 있습니다.
+For all three filters, the output style is the same.
+Only the estimator prefix changes.
 
-- Roger Labbe, *Kalman and Bayesian Filters in Python*, Chapter 12 Particle Filters:  
-  https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python/blob/master/12-Particle-Filters.ipynb
+Common outputs:
+- unified dataset CSV
+- estimates CSV
+- trajectory PNG
+- position error norm PNG
+- optional mp4 or gif animation
 
-### EuRoC 결과 비교 표
+Examples:
+- `outputs/<dataset_name>_ekf_estimates.csv`
+- `outputs/<dataset_name>_ekf_trajectory.png`
+- `outputs/<dataset_name>_ekf_position_error_norm.png`
+- `outputs/<dataset_name>_ekf_trajectory.mp4`
+- `outputs/<dataset_name>_ukf_estimates.csv`
+- `outputs/<dataset_name>_ukf_trajectory.png`
+- `outputs/<dataset_name>_ukf_position_error_norm.png`
+- `outputs/<dataset_name>_ukf_trajectory.mp4`
+- `outputs/<dataset_name>_pf_estimates.csv`
+- `outputs/<dataset_name>_pf_trajectory.png`
+- `outputs/<dataset_name>_pf_position_error_norm.png`
+- `outputs/<dataset_name>_pf_trajectory.mp4`
 
-동일한 데이터셋 조건으로 비교합니다.
-- Dataset: `EuRoC MAV`
-- Sequence: `V1_01_easy`
-- Sensor basis: `imu`
-- Environment: `Vicon Room 1`
+## Console Output
 
-| Filter | RMSE (position) | Runtime (filter only) | Figure | Video | Note |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| KF | TBD | TBD | `outputs/kf_trajectory_3d.png` | `outputs/kf_trajectory_3d.mp4` | - |
-| UKF | TBD | TBD | `outputs/ukf_trajectory_3d.png` | `outputs/ukf_trajectory_3d.mp4` | - |
-| PF | `0.3218` | `8.563 sec` | `outputs/pf_trajectory_3d.png` | `outputs/pf_trajectory_3d.mp4` | `Samples 2000` |
-| InEKF | TBD | TBD | `outputs/inekf_trajectory_3d.png` | `outputs/inekf_trajectory_3d.mp4` | - |
+When a runner finishes, it prints:
+- pose type
+- dataset CSV path
+- number of steps
+- position RMSE
+- filter runtime
+- output file paths
 
-### 2) Docker 실행
+## Notes On EKF And UKF Behavior
 
-이미지 빌드:
+The EKF and UKF implementations in this repository are benchmark-oriented, not full external-framework reproductions.
+They are designed to fit the repository's existing pipeline and keep the same interface as PF.
 
-```bash
-docker build -t state-estimation-benchmark:latest .
-```
-
-PF 실행 (결과를 로컬 `./outputs`에 저장):
-
-```bash
-docker run --rm   -v "$(pwd)/outputs:/app/outputs"   state-estimation-benchmark:latest
-```
-
-mode 변경 실행:
-
-```bash
-docker run --rm   -v "$(pwd)/outputs:/app/outputs"   state-estimation-benchmark:latest   python run_pf.py --mode gnss_only
-```
+In particular:
+- they reuse the repository's current `2d` and `6d` state conventions
+- they use the same dataset loaders and CSV conversion flow as PF
+- they normalize measurement config automatically for 3D runs when needed
+- they keep outputs identical in structure to PF outputs
 
 ## References
 
 The implementation is inspired by existing libraries and tutorials:
-
-- [navlie](https://github.com/decargroup/navlie)  
-- [FilterPy](https://github.com/rlabbe/filterpy)  
-- [Stone Soup tutorials](https://stonesoup.readthedocs.io/en/v1.2/auto_tutorials/index.html)  
-- [robot_localization](https://www.notion.so/4-Robot-Localization-31e5215b8741803cba0fc205c165a59e)  
-- [DRIFT](https://github.com/UMich-CURLY/drift)  
-- Roger Labbe, *Kalman and Bayesian Filters in Python*, Chapter 12 Particle Filters  
-  https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python/blob/master/12-Particle-Filters.ipynb
+- [navlie](https://github.com/decargroup/navlie)
+- [FilterPy](https://github.com/rlabbe/filterpy)
+- [Stone Soup tutorials](https://stonesoup.readthedocs.io/en/v1.2/auto_tutorials/index.html)
+- [robot_localization](https://github.com/cra-ros-pkg/robot_localization)
+- [DRIFT](https://github.com/UMich-CURLY/drift)
+- Roger Labbe, *Kalman and Bayesian Filters in Python*, Chapter 12 Particle Filters

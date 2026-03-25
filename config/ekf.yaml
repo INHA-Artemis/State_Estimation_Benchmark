@@ -1,0 +1,38 @@
+# Goal: EKF 하이퍼파라미터와 noise 설정을 PF와 같은 형식으로 관리한다.
+# What it does: initialization, motion/measurement noise, evaluation, visualization 설정을 정의한다.
+filter:
+  name: ekf
+
+initialization:
+  mean: [0.0, 0.0, 0.0]
+  cov_diag: [1.0, 1.0, 0.3]
+
+motion_model:
+  process_noise_diag: [0.02, 0.02, 0.005]
+
+measurement_model:
+  position_indices: [0, 1]
+  measurement_noise_diag: [0.7, 0.7]
+
+evaluation:
+  enabled: true
+  position_indices: [0, 1]
+  yaw_index: 2
+
+visualization:
+  enabled: true
+  estimator_label: EKF
+  position_indices: [0, 1]
+  downsample: 20
+  elev: 24
+  azim: 38
+  show_projections: true
+  save_animation: true
+  animation:
+    format: mp4
+    fps: 500
+    tail_length: 10
+
+output:
+  dir: outputs
+  timestamped_subdir: true

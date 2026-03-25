@@ -20,18 +20,19 @@ def plot_results(
     visual_cfg: dict | None = None,
 ) -> None:
     visual_cfg = visual_cfg or {}
+    estimator_label = str(visual_cfg.get("estimator_label", "PF"))
     dpi = 150
     linewidth_gt = 1.8 if pose_type == "3d" else 2.0
-    linewidth_pf = 1.0 if pose_type == "3d" else 1.5
+    linewidth_est = 1.0 if pose_type == "3d" else 1.5
     alpha_gt = 0.9 if pose_type == "3d" else 1.0
-    alpha_pf = 0.75 if pose_type == "3d" else 1.0
+    alpha_est = 0.75 if pose_type == "3d" else 1.0
     start_marker_size = 24.0
     end_marker_size = 32.0
 
     if pose_type == "2d":
         fig, ax = plt.subplots(1, 1, figsize=(6.5, 5.5))
         ax.plot(gt[:, 0], gt[:, 1], label="GT", linewidth=linewidth_gt, alpha=alpha_gt)
-        ax.plot(estimates[:, 0], estimates[:, 1], label="PF", linewidth=linewidth_pf, alpha=alpha_pf)
+        ax.plot(estimates[:, 0], estimates[:, 1], label=estimator_label, linewidth=linewidth_est, alpha=alpha_est)
         ax.scatter(gt[0, 0], gt[0, 1], s=start_marker_size, color="tab:blue", marker="o", label="Start")
         ax.scatter(gt[-1, 0], gt[-1, 1], s=end_marker_size, color="tab:blue", marker="x", label="End")
         ax.set_title("2D Trajectory")
@@ -60,7 +61,7 @@ def plot_results(
             ax_traj = fig.add_subplot(1, 1, 1, projection="3d")
 
         ax_traj.plot(gt_plot[:, 0], gt_plot[:, 1], gt_plot[:, 2], label="GT", linewidth=linewidth_gt, alpha=alpha_gt)
-        ax_traj.plot(est_plot[:, 0], est_plot[:, 1], est_plot[:, 2], label="PF", linewidth=linewidth_pf, alpha=alpha_pf)
+        ax_traj.plot(est_plot[:, 0], est_plot[:, 1], est_plot[:, 2], label=estimator_label, linewidth=linewidth_est, alpha=alpha_est)
         ax_traj.scatter(gt_plot[0, 0], gt_plot[0, 1], gt_plot[0, 2], s=start_marker_size, color="tab:blue", marker="o")
         ax_traj.scatter(gt_plot[-1, 0], gt_plot[-1, 1], gt_plot[-1, 2], s=end_marker_size, color="tab:blue", marker="x")
         ax_traj.set_title(f"3D Trajectory (every {stride}th sample)")
@@ -71,9 +72,9 @@ def plot_results(
         ax_traj.legend()
 
         if show_projections:
-            _plot_projection(ax_xy, gt_plot[:, 0], gt_plot[:, 1], est_plot[:, 0], est_plot[:, 1], "XY Projection", "x", "y")
-            _plot_projection(ax_xz, gt_plot[:, 0], gt_plot[:, 2], est_plot[:, 0], est_plot[:, 2], "XZ Projection", "x", "z")
-            _plot_projection(ax_yz, gt_plot[:, 1], gt_plot[:, 2], est_plot[:, 1], est_plot[:, 2], "YZ Projection", "y", "z")
+            _plot_projection(ax_xy, gt_plot[:, 0], gt_plot[:, 1], est_plot[:, 0], est_plot[:, 1], "XY Projection", "x", "y", estimator_label)
+            _plot_projection(ax_xz, gt_plot[:, 0], gt_plot[:, 2], est_plot[:, 0], est_plot[:, 2], "XZ Projection", "x", "z", estimator_label)
+            _plot_projection(ax_yz, gt_plot[:, 1], gt_plot[:, 2], est_plot[:, 1], est_plot[:, 2], "YZ Projection", "y", "z", estimator_label)
 
     save_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
@@ -118,9 +119,10 @@ def _plot_projection(
     title: str,
     xlabel: str,
     ylabel: str,
+    estimator_label: str,
 ) -> None:
     ax.plot(gt_x, gt_y, color="tab:blue", linewidth=1.4, alpha=0.9, label="GT")
-    ax.plot(est_x, est_y, color="tab:orange", linewidth=0.9, alpha=0.9, label="PF")
+    ax.plot(est_x, est_y, color="tab:orange", linewidth=0.9, alpha=0.9, label=estimator_label)
     ax.set_title(title)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
@@ -137,6 +139,7 @@ def save_trajectory_animation(
     fps: int = 20,
     tail_length: int = 80,
     moving_average_window: int = 50,
+    estimator_label: str = "PF",
 ) -> bool:
     if estimates.size == 0 or gt.size == 0:
         return False
@@ -176,7 +179,7 @@ def save_trajectory_animation(
 
         ax_traj.plot(gt[:, 0], gt[:, 1], color="tab:blue", alpha=0.25, linewidth=2.0, label="GT full")
         gt_line, = ax_traj.plot([], [], color="tab:blue", linewidth=2.0, label="GT")
-        est_line, = ax_traj.plot([], [], color="tab:orange", linewidth=1.5, label="PF")
+        est_line, = ax_traj.plot([], [], color="tab:orange", linewidth=1.5, label=estimator_label)
         gt_point, = ax_traj.plot([], [], marker="o", color="tab:blue")
         est_point, = ax_traj.plot([], [], marker="o", color="tab:orange")
         err_line, = ax_err.plot([], [], color="tab:red", linewidth=1.5, label="Error norm")
@@ -220,7 +223,7 @@ def save_trajectory_animation(
 
         ax_traj.plot(gt[:, 0], gt[:, 1], gt[:, 2], color="tab:blue", alpha=0.25, linewidth=2.0, label="GT full")
         gt_line, = ax_traj.plot([], [], [], color="tab:blue", linewidth=2.0, label="GT")
-        est_line, = ax_traj.plot([], [], [], color="tab:orange", linewidth=1.5, label="PF")
+        est_line, = ax_traj.plot([], [], [], color="tab:orange", linewidth=1.5, label=estimator_label)
         gt_point, = ax_traj.plot([], [], [], marker="o", color="tab:blue")
         est_point, = ax_traj.plot([], [], [], marker="o", color="tab:orange")
         err_line, = ax_err.plot([], [], color="tab:red", linewidth=1.5, label="Error norm")
