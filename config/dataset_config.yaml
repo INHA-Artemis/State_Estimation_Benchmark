@@ -7,11 +7,11 @@
 # synthetic: 내부 생성 궤적 사용
 # euroc: EuRoC csv 사용
 # rosbag: ROS1 .bag 또는 ROS2 bag(directory / metadata.yaml / .db3) 사용
-dataset_type: m2dgr # options: synthetic, euroc, rosbag, m2dgr
+dataset_type: synthetic # options: synthetic, euroc, rosbag, m2dgr
 
 # 출력 파일명과 로그 표시에서 사용할 dataset 이름이다.
 # 비워두면 rosbag의 경우 bag 파일명(또는 ROS2 bag 디렉터리명)에서 자동으로 추론한다.
-dataset_name: street_01
+dataset_name: synthetic_test # e.g. euroc_v1, rosbag_circle, m2dgr_street01
 
 # pose 표현 차원.
 # 2d: [x, y, yaw]
@@ -32,7 +32,7 @@ seed: 10 # 랜덤 시드 (재현성 위해)
 # 통합 dataset CSV 저장 경로.
 # 파일명이 generic한 경우(e.g. rosbag_6d.csv) 실행 시 dataset_name 기반으로 자동 보정될 수 있다. 
 # Have to change name here if you want to save multiple CSVs from the same dataset_type (e.g. different rosbag sequences).
-generated_csv_path: outputs/m2dgr.csv
+generated_csv_path: outputs/synthetic_test.csv
 
 # ===== EuRoC 설정 =====
 euroc_imu_csv: /euroc_dataset/imu0/data.csv
@@ -57,7 +57,7 @@ rosbag_gt_topic: /pose_transformed
 # accel: raw accelerometer 값을 그대로 사용
 # gt_velocity: GT position 차분으로 velocity를 만들어 사용
 # 주의: 현재 PF motion model은 raw accel보다 gt_velocity와 더 잘 맞는다.
-rosbag_linear_source: gt_velocity # options: accel, gt_velocity
+rosbag_linear_source: accel # options: accel, gt_velocity
 
 # true면 GT position에 노이즈를 더해 GNSS measurement처럼 사용한다.
 rosbag_use_gt_as_gnss: true
@@ -70,7 +70,7 @@ m2dgr_gt_txt_path: /m2dgr_dataset/M2DGR/street_01.txt
 m2dgr_imu_topic: /handsfree/imu
 m2dgr_gnss_topic: /ublox/fix
 # accel: raw accelerometer 사용, gt_velocity: GT 차분 velocity 사용
-m2dgr_linear_source: gt_velocity # options: accel, gt_velocity
+m2dgr_linear_source: accel # options: accel, gt_velocity
 # true면 실제 GNSS 대신 GT+noise를 measurement로 사용
 m2dgr_use_gt_as_gnss: false
 
@@ -82,4 +82,4 @@ use_gnss: true
 imu_noise_std: [0.05, 0.02]
 
 # GNSS(position measurement) 노이즈 표준편차 [x, y, z].
-gnss_noise_std: [0.7, 0.7, 0.7]
+gnss_noise_std: [0.05, 0.05, 0.05]

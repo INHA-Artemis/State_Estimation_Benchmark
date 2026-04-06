@@ -5,7 +5,7 @@ filter:
   name: pf # 현재 실제 동작 구현은 PF이며, 향후 ekf/inekf와 같은 이름으로 확장 가능하다.
 
 # 입자 개수. 값이 클수록 posterior 근사가 안정적이지만 연산량과 메모리 사용량이 증가한다.
-num_particles: 2000
+num_particles: 3000
 # ESS(유효 샘플 수)가 num_particles * 이 비율보다 작아지면 resampling을 수행한다.
 # 값이 낮으면 resampling이 드물어지고, 값이 높으면 더 자주 resampling된다.
 resample_threshold_ratio: 0.5

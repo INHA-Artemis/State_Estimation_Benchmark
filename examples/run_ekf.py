@@ -16,6 +16,7 @@ from datasets.m2dgr_loader import load_m2dgr_dataset
 from datasets.rosbag_loader import load_rosbag_dataset
 from filters.estimated_kalman_filter import ExtendedKalmanFilter
 from utils.csv_dataset import load_dataset_from_csv, save_dataset_to_csv
+from utils.filter_initialization import align_initialization_with_ground_truth
 from utils.generate_gnss import generate_gnss_measurements
 from utils.generate_imu import generate_imu_controls
 from utils.math_utils import compute_rmse
@@ -38,6 +39,7 @@ def main() -> None:
 
     pose_type, dataset_name, csv_path, dataset, gt, dt, timestamps_ns = _prepare_dataset(dataset_cfg)
     _normalize_filter_config_for_pose(ekf_cfg, pose_type)
+    align_initialization_with_ground_truth(ekf_cfg, gt, pose_type, dataset_cfg.get("mode", "fused"))
 
     if np.isscalar(dt):
         dt_values = np.full(len(dataset), float(dt), dtype=float)

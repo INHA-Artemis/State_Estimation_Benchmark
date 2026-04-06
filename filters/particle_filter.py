@@ -115,8 +115,8 @@ class ParticleFilter:
                 u = self._fit_vector(u, self.dim)
                 self.particles += u[None, :] * dt
 
-        # 프로세스 노이즈 추가
-        std = np.sqrt(np.clip(self.process_noise_diag, 0.0, None))
+        # dt가 작은 샘플에서 노이즈가 과도하게 누적되지 않도록 시간 간격에 맞춰 스케일한다.
+        std = np.sqrt(np.clip(self.process_noise_diag, 0.0, None)) * np.sqrt(max(float(dt), 1e-12))
         self.particles += self.rng.normal(0.0, std, size=(self.num_particles, self.dim))
         return self.particles
 

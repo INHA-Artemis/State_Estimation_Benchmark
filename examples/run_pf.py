@@ -17,6 +17,7 @@ from datasets.m2dgr_loader import load_m2dgr_dataset
 from datasets.rosbag_loader import load_rosbag_dataset
 from filters.particle_filter import ParticleFilter
 from utils.csv_dataset import load_dataset_from_csv, save_dataset_to_csv
+from utils.filter_initialization import align_initialization_with_ground_truth
 from utils.generate_gnss import generate_gnss_measurements
 from utils.generate_imu import generate_imu_controls
 from utils.math_utils import compute_rmse
@@ -120,6 +121,7 @@ def main() -> None:
     )
 
     dataset, gt = load_dataset_from_csv(csv_path, pose_type=pose_type, mode=mode)
+    align_initialization_with_ground_truth(pf_cfg, gt, pose_type, dataset_cfg.get("mode", "fused"))
 
     if np.isscalar(dt):
         dt_values = np.full(len(dataset), float(dt), dtype=float)

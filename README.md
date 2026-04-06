@@ -44,16 +44,16 @@ The EKF and UKF were intentionally kept simple to match the repository style use
 
 ## Reference Comparison
 
-| 항목 \ Reference | [navlie](https://github.com/decargroup/navlie) | [FilterPy](https://github.com/rlabbe/filterpy) | [Stone Soup](https://stonesoup.readthedocs.io/en/v1.2/auto_tutorials/index.html) | [robot_localization](https://github.com/cra-ros-pkg/robot_localization) | [DRIFT](https://github.com/UMich-CURLY/drift) | OURS |
+| Feature \ Reference | [navlie](https://github.com/decargroup/navlie) | [FilterPy](https://github.com/rlabbe/filterpy) | [Stone Soup](https://stonesoup.readthedocs.io/en/v1.2/auto_tutorials/index.html) | [robot_localization](https://github.com/cra-ros-pkg/robot_localization) | [DRIFT](https://github.com/UMich-CURLY/drift) | OURS |
 | --- | --- | --- | --- | --- | --- | --- |
-| **Python 기반** | O | O | O | X | X | O |
+| **Python-based** | O | O | O | X | X | O |
 | **EKF** | O | O | O | O | X | O |
 | **UKF** | O | O | O | O | X | O |
 | **PF** | X | O | O | X | X | O |
 | **InEKF** | X | X | X | X | O | O |
-| **실시간 estimation visualization** | X | X | X | X | X | O |
-| **IMU 관련 모델/입력 지원** | O | X | X | O | O | O |
-| **GPS 관련 처리/연동** | X | X | X | O | X | O |
+| **Real-time estimation visualization** | X | X | X | X | X | O |
+| **IMU model/input support** | O | X | X | O | O | O |
+| **GPS processing/integration** | X | X | X | O | X | O |
 | **IMU on/off** | X | X | X | X | X | O |
 | **GPS on/off** | X | X | X | X | X | O |
 
@@ -292,7 +292,25 @@ dt: 0.1
 seed: 10
 ```
 
+Recommended for PF benchmark comparisons:
+
+```yaml
+num_particles: 3000
+```
+
 ## Single-Dataset Benchmark Comparison
+
+### Synthetic: `synthetic_test`
+
+The following results were recorded on the repository-generated synthetic dataset.
+For the PF run in this benchmark section, use `3000` particles.
+
+| Filter | RMSE (position) | Runtime (filter only) | Status |
+| --- | ---: | ---: | --- |
+| PF (`3000` particles) | `0.0185` - `0.0189` | `0.111` - `0.173 sec` | measured |
+| EKF | `0.0221` | `0.017 sec` | measured |
+| UKF | `TBD` | `TBD` | not recorded yet |
+| InEKF | `0.0240` | `0.024 sec` | measured |
 
 ### M2DGR: `street_01`
 
