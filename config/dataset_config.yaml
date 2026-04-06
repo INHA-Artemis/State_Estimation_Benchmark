@@ -25,7 +25,7 @@ pose_type: 6d # options: 2d, 6d
 mode: fused # options: imu_only, gnss_only, fused
 
 # For synthetic dataset:
-sequence_length: 300 # 시퀀스 길이(타임스텝 수)
+sequence_length: 3000 # 시퀀스 길이(타임스텝 수)
 dt: 0.1 # 타임스텝 간격(초)
 seed: 10 # 랜덤 시드 (재현성 위해)
 

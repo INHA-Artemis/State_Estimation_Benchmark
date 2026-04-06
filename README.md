@@ -302,15 +302,27 @@ num_particles: 3000
 
 ### Synthetic: `synthetic_test`
 
-The following results were recorded on the repository-generated synthetic dataset.
-For the PF run in this benchmark section, use `3000` particles.
+The following results were recorded on the repository-generated synthetic dataset with `3000` steps.
+PF performance depends strongly on the number of particles, so the PF entries below are reported separately by particle count.
 
 | Filter | RMSE (position) | Runtime (filter only) | Status |
 | --- | ---: | ---: | --- |
-| PF (`3000` particles) | `0.0185` - `0.0189` | `0.111` - `0.173 sec` | measured |
-| EKF | `0.0221` | `0.017 sec` | measured |
-| UKF | `TBD` | `TBD` | not recorded yet |
-| InEKF | `0.0240` | `0.024 sec` | measured |
+| EKF | `0.0225` | `0.166 sec` | measured |
+| UKF | `0.0253` | `1.227 sec` | measured |
+| InEKF | `0.0236` | `0.233 sec` | measured |
+
+PF particle-count sweep:
+
+| PF Particles | RMSE (position) | Runtime (filter only) | Status |
+| ---: | ---: | ---: | --- |
+| `3000` | `0.0146` | `1.117 sec` | measured |
+| `1000` | `0.0177` | `0.484 sec` | measured |
+| `500` | `0.0233` | `0.325 sec` | measured |
+| `200` | `0.0325` | `0.229 sec` | measured |
+| `100` | `0.0411` | `0.192 sec` | measured |
+| `10` | `0.1400` | `0.161 sec` | measured |
+
+Note: the current default PF config may use a different `num_particles` value than the best PF result shown above. Check `config/pf.yaml` before reproducing a specific benchmark row.
 
 ### M2DGR: `street_01`
 
