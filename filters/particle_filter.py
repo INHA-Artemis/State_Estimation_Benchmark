@@ -69,6 +69,16 @@ class ParticleFilter:
             self.measurement_indices.size,
             fill_missing="zero",
         )
+        self.likelihood_model = str(meas_cfg.get("likelihood_model", "gaussian")).strip().lower()
+        if self.likelihood_model not in {"gaussian", "gaussian_mixture"}:
+            raise ValueError("measurement_model.likelihood_model must be 'gaussian' or 'gaussian_mixture'.")
+        self.outlier_weight = float(np.clip(float(meas_cfg.get("outlier_weight", 0.05)), 0.0, 1.0))
+        default_outlier_diag = np.maximum(self.measurement_noise_diag * 400.0, 1.0)
+        self.outlier_noise_diag = fit_diag(
+            meas_cfg.get("outlier_noise_diag", default_outlier_diag),
+            self.measurement_indices.size,
+            fill_missing="zero",
+        )
 
         self.particles = np.repeat(zero_state(self.pose_type)[None, :], self.num_particles, axis=0)
         self.weights = np.full(self.num_particles, 1.0 / self.num_particles, dtype=float)
@@ -153,14 +163,28 @@ class ParticleFilter:
         z_hat = self.particles[:, self.measurement_indices]
         innovation = z_hat - z[None, :]
 
-        # 대각 공분산 가정 가우시안 likelihood
-        var = np.clip(self.measurement_noise_diag, 1e-12, None)
-        log_likelihood = -0.5 * np.sum((innovation**2) / var[None, :], axis=1)
+        log_likelihood = self._measurement_log_likelihood(innovation)
         log_likelihood -= np.max(log_likelihood)
 
         self.weights *= np.exp(log_likelihood)
         self.normalize()
         return self.weights
+
+    def _measurement_log_likelihood(self, innovation: np.ndarray) -> np.ndarray:
+        inlier_var = np.clip(self.measurement_noise_diag, 1e-12, None)
+        inlier_log = _diagonal_gaussian_logpdf(innovation, inlier_var)
+
+        if self.likelihood_model == "gaussian":
+            return inlier_log
+
+        outlier_var = np.clip(self.outlier_noise_diag, 1e-12, None)
+        outlier_log = _diagonal_gaussian_logpdf(innovation, outlier_var)
+        inlier_weight = np.clip(1.0 - self.outlier_weight, 1e-12, 1.0)
+        outlier_weight = np.clip(self.outlier_weight, 1e-12, 1.0)
+        return np.logaddexp(
+            np.log(inlier_weight) + inlier_log,
+            np.log(outlier_weight) + outlier_log,
+        )
 
     def normalize(self) -> np.ndarray:
         # 가중치 정규화 (비정상 값이면 균등 가중치로 복구)
@@ -231,3 +255,11 @@ class ParticleFilter:
         if self.dim == 3:
             return [2]
         return [3, 4, 5]
+
+
+def _diagonal_gaussian_logpdf(innovation: np.ndarray, variance: np.ndarray) -> np.ndarray:
+    variance = np.asarray(variance, dtype=float).reshape(1, -1)
+    return -0.5 * (
+        np.sum((innovation**2) / variance, axis=1)
+        + np.sum(np.log(2.0 * np.pi * variance))
+    )

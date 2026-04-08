@@ -212,6 +212,60 @@ PF used `6000` particles in this run.
 Compared with raw GNSS (`0.0705`) and deterministic IMU-only (`0.1731`), the fused runs show the expected correction effect.
 PF, EKF, and InEKF are close on this synthetic case, while UKF is still improved over raw GNSS but less tight under the current config.
 
+## Robust GNSS Outlier Experiment
+
+This experiment is designed to show when PF can be more useful than Gaussian filters.
+The clean synthetic setup uses direct position GNSS with Gaussian noise, so EKF/InEKF can already perform very well.
+To stress the filters, the GNSS generator can inject occasional large outliers.
+
+Current outlier dataset settings:
+
+```yaml
+gnss_noise_model: outlier_mixture
+gnss_outlier_prob: 0.1
+gnss_outlier_std: [2.0, 2.0, 2.0]
+```
+
+Current PF setting for this run:
+
+```yaml
+num_particles: 3000
+measurement_model:
+  likelihood_model: gaussian
+```
+
+Measured `synthetic_test`, `2d`, `500` step outlier run:
+
+| Filter | Mode | RMSE (position) | Runtime (filter only) | Note |
+| --- | --- | ---: | ---: | --- |
+| PF | `fused` | `0.1712` | `0.123 sec` | 3000 particles, Gaussian likelihood |
+| EKF | `fused` | `0.2502` | `0.025 sec` | Gaussian update |
+| InEKF | `fused` | `0.2502` | `0.027 sec` | Gaussian update |
+| UKF | `fused` | `0.2526` | `0.104 sec` | Gaussian update |
+
+Under the outlier mixture, PF degrades less than EKF/UKF/InEKF even before enabling the robust mixture likelihood.
+The next comparison is to switch PF to `likelihood_model: gaussian_mixture` and check whether the outlier degradation decreases further.
+
+PF-side robust likelihood options for the next run:
+
+```yaml
+measurement_model:
+  likelihood_model: gaussian_mixture
+  outlier_weight: 0.05
+  outlier_noise_diag: [4.0, 4.0]
+```
+
+The intended comparison is:
+
+| Scenario | Dataset noise | PF likelihood | Expected behavior |
+| --- | --- | --- | --- |
+| Clean | Gaussian GNSS | Gaussian | EKF/InEKF/PF can be similar |
+| Outlier | GNSS outlier mixture | Gaussian | filters are pulled by bad measurements |
+| Robust outlier | GNSS outlier mixture | Gaussian mixture | PF should degrade less if particles cover the true state |
+
+The outlier-only case is not the full robust PF experiment: PF also needs a likelihood model that admits the possibility of bad GNSS samples.
+Otherwise it can still trust outliers as ordinary Gaussian measurements.
+
 ## Single-Dataset Benchmark Comparison
 
 ### Synthetic: `synthetic_test`
@@ -258,42 +312,6 @@ Note: the current default PF config may use a different `num_particles` value th
 
 These tables compare filters on a single fixed dataset for each benchmark sequence.
 The output format is kept the same across PF, EKF, and UKF so the results can be compared directly.
-
-## Output Files
-
-For all three filters, the output style is the same.
-Only the estimator prefix changes.
-
-Common outputs:
-- unified dataset CSV
-- estimates CSV
-- trajectory PNG
-- position error norm PNG
-- optional mp4 or gif animation
-
-Examples:
-- `outputs/<dataset_name>_ekf_estimates.csv`
-- `outputs/<dataset_name>_ekf_trajectory.png`
-- `outputs/<dataset_name>_ekf_position_error_norm.png`
-- `outputs/<dataset_name>_ekf_trajectory.mp4`
-- `outputs/<dataset_name>_ukf_estimates.csv`
-- `outputs/<dataset_name>_ukf_trajectory.png`
-- `outputs/<dataset_name>_ukf_position_error_norm.png`
-- `outputs/<dataset_name>_ukf_trajectory.mp4`
-- `outputs/<dataset_name>_pf_estimates.csv`
-- `outputs/<dataset_name>_pf_trajectory.png`
-- `outputs/<dataset_name>_pf_position_error_norm.png`
-- `outputs/<dataset_name>_pf_trajectory.mp4`
-
-## Console Output
-
-When a runner finishes, it prints:
-- pose type
-- dataset CSV path
-- number of steps
-- position RMSE
-- filter runtime
-- output file paths
 
 ## Notes On EKF And UKF Behavior
 

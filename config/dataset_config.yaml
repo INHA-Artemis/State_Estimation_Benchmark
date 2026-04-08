@@ -35,3 +35,6 @@ use_imu: true
 use_gnss: true
 imu_noise_std: [0.05, 0.02]
 gnss_noise_std: [0.05, 0.05, 0.05]
+gnss_noise_model: outlier_mixture # options: gaussian, outlier_mixture
+gnss_outlier_prob: 0.1
+gnss_outlier_std: [2.0, 2.0, 2.0]
