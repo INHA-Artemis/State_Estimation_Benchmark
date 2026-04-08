@@ -1,7 +1,7 @@
 # IMU/GNSS State Estimation Benchmark Library
 
-This repository is a Python benchmark library for IMU/GNSS state estimation algorithms.
-It provides a unified pipeline for loading datasets, generating a common CSV representation, running a filter, and saving plots, error curves, animations, and estimate CSV files.
+This repository is a Python benchmark library for IMU/GNSS state estimation.
+It provides a unified pipeline for dataset preparation, filter execution, and trajectory/error visualization.
 
 ## Overview
 
@@ -28,20 +28,11 @@ Note on `synthetic`:
 
 ## Implementation Notes
 
-The EKF, UKF, and PF implementations in this repository are written with **NumPy-based array operations**.
-This is the same design direction used by the particle filter path in this repository.
+The filters are implemented with NumPy arrays and `numpy.linalg`; no external filtering library is required for execution.
+All runners share the same dataset preparation, evaluation, and visualization flow so results can be compared under the same input conditions.
 
-What that means in practice:
-- state, covariance, particles, measurements, and controls are handled as NumPy arrays
-- linear algebra is computed with `numpy.linalg`
-- dataset preparation and evaluation also use NumPy arrays end-to-end
-- no external Kalman filtering library is required for EKF or UKF execution
-
-The EKF and UKF were intentionally kept simple to match the repository style used by PF:
-- reuse existing files under `utils`, `models`, and `datasets`
-- keep the runner/output flow identical to PF
-- save the same kinds of result files with only the estimator name changed
-
+The current synthetic benchmark is intentionally simple: direct position GNSS with Gaussian or outlier-mixture noise.
+PF is therefore not expected to dominate the clean Gaussian case; its advantage is expected to appear more clearly under non-Gaussian GNSS outliers.
 
 ## Reference Comparison
 
@@ -68,13 +59,11 @@ pip install -r requirements.txt
 
 ## Common Execution Flow
 
-All filters follow the same high-level flow:
-1. Read `config/dataset_config.yaml`
-2. Read the filter-specific config file
-3. Load or generate controls, measurements, ground truth, and timestamps
-4. Save a unified dataset CSV
-5. Run the filter
-6. Save estimate CSV, trajectory plot, error plot, and optional animation
+All filter runners follow the same flow:
+1. Read `config/dataset_config.yaml` and the filter-specific config.
+2. Load or generate controls, measurements, ground truth, and timestamps.
+3. Save a unified dataset CSV.
+4. Run the filter and save trajectory/error artifacts.
 
 ## How To Run Filters
 
@@ -85,9 +74,8 @@ cd /workspace/State_Estimation_Benchmark
 python3 examples/run_<filter>.py
 ```
 
-For example, `<filter>` is the suffix used by the matching runner file under `examples/`.
-
-To inspect the dataset before filtering:
+`<filter>` is the suffix used by the matching runner file under `examples/`.
+To inspect raw inputs before filtering:
 
 ```bash
 python3 examples/plot_dataset_before.py --source both
@@ -97,15 +85,9 @@ python3 examples/plot_dataset_before.py --source both
 
 ### Dataset Config
 
-The shared dataset configuration is:
-- `config/dataset_config.yaml`
-
-Important fields:
-- `dataset_type`: `synthetic`, `euroc`, `rosbag`, `m2dgr`
-- `dataset_name`: used in output filenames
-- `pose_type`: `2d` or `6d`
-- `mode`: `imu_only`, `gnss_only`, `fused`
-- `generated_csv_path`: path to the unified dataset CSV
+The shared dataset configuration is `config/dataset_config.yaml`.
+Key fields are `dataset_type`, `dataset_name`, `pose_type`, `mode`, and `generated_csv_path`.
+The runtime modes are `imu_only` for prediction only, `gnss_only` for measurement update only, and `fused` for prediction plus measurement update.
 
 Dataset-specific sections and reference links:
 - EuRoC / Newer College style reference: https://ori.ox.ac.uk/datasets/newer-college-dataset
@@ -118,21 +100,14 @@ Dataset-specific sections and reference links:
 
 ### Filter Configs
 
-Filter configs live under `config/` and follow the same broad layout:
-- `initialization`
-- `motion_model`
-- `measurement_model`
-- `evaluation`
-- `visualization`
-- `output`
-
-Some filters add their own section, such as UKF `sigma_points` or PF particle/resampling settings.
+Filter configs live under `config/` and share the same broad sections: `initialization`, `motion_model`, `measurement_model`, `evaluation`, `visualization`, and `output`.
+Filter-specific options, such as UKF `sigma_points` or PF particle/resampling settings, stay inside the matching filter config.
 
 ## Dataset Examples
 
 Select a dataset by editing `config/dataset_config.yaml`.
 
-Minimal synthetic example:
+Synthetic example:
 
 ```yaml
 dataset_type: synthetic
@@ -144,7 +119,7 @@ dt: 0.1
 seed: 10
 ```
 
-Minimal external dataset examples:
+External dataset examples:
 
 ```yaml
 # EuRoC
@@ -178,7 +153,7 @@ Common mode options:
 ## Synthetic Comparison Summary
 
 All rows below use `synthetic_test`, `2d`, `500` steps.
-`Before` rows are raw-input baselines, while filter rows are actual estimator runs.
+`Before` rows are raw-input baselines; filter rows are actual estimator runs.
 The outlier rows use `gnss_noise_model: outlier_mixture`, `gnss_outlier_prob: 0.1`, and `gnss_outlier_std: [2.0, 2.0, 2.0]`; the PF outlier run uses `3000` particles with Gaussian likelihood.
 
 | Scenario | Case | Mode / Source | RMSE (position) | Runtime (filter only) | Note |
@@ -198,15 +173,18 @@ The outlier rows use `gnss_noise_model: outlier_mixture`, `gnss_outlier_prob: 0.
 |  | InEKF | `fused` | `0.2502` | `0.027 sec` | Gaussian update |
 |  | UKF | `fused` | `0.2526` | `0.104 sec` | Gaussian update |
 
-Key takeaways: clean fused runs are much better than raw GNSS or IMU-only baselines; `imu_only` PF can perform poorly because no measurement update exists to reweight particles; under GNSS outliers, PF degrades less than EKF/UKF/InEKF in the current run.
-The next PF check is to switch to `likelihood_model: gaussian_mixture` and compare the robust outlier result.
+Key takeaways: clean fused runs improve over raw GNSS and IMU-only baselines; `imu_only` PF can perform poorly because particles are not reweighted; under GNSS outliers, PF degrades less than EKF/UKF/InEKF in the current run.
+The next PF check is `likelihood_model: gaussian_mixture` for the robust outlier case.
 
-## Single-Dataset Benchmark Comparison
+## Additional Benchmark Results
+
+The following results are older single-dataset benchmark records kept for reference.
+They use different dataset lengths/configs from the `Synthetic Comparison Summary`, so compare them by scenario rather than as a single leaderboard.
 
 ### Synthetic: `synthetic_test`
 
-The following results were recorded on the repository-generated synthetic dataset with `3000` steps.
-PF performance depends strongly on the number of particles, so the PF entries below are reported separately by particle count.
+This synthetic run used `3000` steps.
+PF entries are reported separately by particle count because PF performance depends strongly on the number of particles.
 
 | Filter | RMSE (position) | Runtime (filter only) | Status |
 | --- | ---: | ---: | --- |
@@ -245,19 +223,12 @@ Note: the current default PF config may use a different `num_particles` value th
 | UKF | `0.3212` | `12.256 sec` | measured |
 | InEKF | `TBD` | `TBD` | not recorded yet |
 
-These tables compare filters on a single fixed dataset for each benchmark sequence.
-The output format is kept the same across PF, EKF, and UKF so the results can be compared directly.
+These tables compare filters on a fixed dataset for each benchmark sequence.
 
-## Notes On EKF And UKF Behavior
+## Filter Behavior Notes
 
-The EKF and UKF implementations in this repository are benchmark-oriented, not full external-framework reproductions.
-They are designed to fit the repository's existing pipeline and keep the same interface as PF.
-
-In particular:
-- they reuse the repository's current `2d` and `6d` state conventions
-- they use the same dataset loaders and CSV conversion flow as PF
-- they normalize measurement config automatically for 3D runs when needed
-- they keep outputs identical in structure to PF outputs
+The implementations are benchmark-oriented and share the repository's `2d`/`6d` state conventions, dataset loaders, CSV conversion flow, and output style.
+EKF/InEKF can be very competitive on clean Gaussian position measurements, while PF is more informative under non-Gaussian or outlier-heavy measurement conditions.
 
 ## Docker Usage
 
