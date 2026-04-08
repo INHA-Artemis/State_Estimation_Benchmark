@@ -140,6 +140,8 @@ def load_dataset_from_csv(csv_path: Path, pose_type: str, mode: str) -> tuple[li
                 {
                     "control": None if mode == "gnss_only" else control,
                     "measurement": None if mode == "imu_only" else measurement,
+                    "raw_control": control,
+                    "raw_measurement": measurement,
                     "dt": dt,
                     "gt": gt,
                 }

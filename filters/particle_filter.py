@@ -5,7 +5,14 @@ from typing import Iterable, Optional
 import numpy as np
 
 from models import measurement_model
+from filters.particle_filter_resampling_algo import (
+    multinomial_resample,
+    residual_resample,
+    stratified_resample,
+    systematic_resample,
+)
 from models.state_model import state_dim, state_vector, zero_state
+from utils.math_utils import fit_diag, fit_vector
 
 
 class ParticleFilter:
@@ -20,6 +27,7 @@ class ParticleFilter:
         seed: Optional[int] = None,
         motion_config: Optional[dict] = None,
         measurement_config: Optional[dict] = None,
+        resampling_method: str = "systematic",
     ) -> None:
         # pose 타입 정규화 및 검증
         if pose_type == "6d":
@@ -34,21 +42,32 @@ class ParticleFilter:
         self.num_particles = int(num_particles)
         self.threshold = max(1, int(self.num_particles * float(resample_threshold_ratio)))
         self.rng = np.random.default_rng(seed)
+        self.resampling_method = str(resampling_method).strip().lower()
+        self._resamplers = {
+            "multinomial": multinomial_resample,
+            "residual": residual_resample,
+            "stratified": stratified_resample,
+            "systematic": systematic_resample,
+        }
+        if self.resampling_method not in self._resamplers:
+            available = sorted(self._resamplers)
+            raise ValueError(f"Unknown resampling_method: {self.resampling_method}. Available: {available}")
 
         motion_cfg = motion_config or {}
         meas_cfg = measurement_config or {}
 
         # 프로세스 노이즈(상태 차원에 맞춰 보정)
-        self.process_noise_diag = self._fit_diag(motion_cfg.get("process_noise_diag", np.zeros(self.dim)), self.dim)
+        self.process_noise_diag = fit_diag(motion_cfg.get("process_noise_diag", np.zeros(self.dim)), self.dim, fill_missing="zero")
 
         # 측정 인덱스/노이즈 설정
         default_meas_dim = 2 if self.pose_type == "2d" else 3
         self.measurement_indices = np.asarray(
             meas_cfg.get("position_indices", list(range(default_meas_dim))), dtype=int
         )
-        self.measurement_noise_diag = self._fit_diag(
+        self.measurement_noise_diag = fit_diag(
             meas_cfg.get("measurement_noise_diag", np.ones(self.measurement_indices.size)),
             self.measurement_indices.size,
+            fill_missing="zero",
         )
 
         self.particles = np.repeat(zero_state(self.pose_type)[None, :], self.num_particles, axis=0)
@@ -66,6 +85,7 @@ class ParticleFilter:
             seed=pf_config.get("seed"),
             motion_config=pf_config.get("motion_model", {}),
             measurement_config=pf_config.get("measurement_model", {}),
+            resampling_method=pf_config.get("resampling_method", "systematic"),
         )
 
         init_cfg = pf_config.get("initialization", {})
@@ -81,13 +101,13 @@ class ParticleFilter:
         if mean is None:
             mean_vec = zero_state(self.pose_type)
         else:
-            mean_vec = state_vector(self._fit_vector(np.asarray(mean, dtype=float).reshape(-1), self.dim), self.pose_type)
+            mean_vec = state_vector(fit_vector(np.asarray(mean, dtype=float).reshape(-1), self.dim), self.pose_type)
 
         # 초기 공분산(대각) 설정
         if cov_diag is None:
             cov = np.zeros(self.dim, dtype=float)
         else:
-            cov = self._fit_diag(cov_diag, self.dim)
+            cov = fit_diag(cov_diag, self.dim, fill_missing="zero")
 
         # 입자 샘플링
         std = np.sqrt(np.clip(cov, 0.0, None))
@@ -112,7 +132,7 @@ class ParticleFilter:
                 self.particles[:, 1] += speed * np.sin(yaw) * dt
                 self.particles[:, 2] += yaw_rate * dt
             else:
-                u = self._fit_vector(u, self.dim)
+                u = fit_vector(u, self.dim)
                 self.particles += u[None, :] * dt
 
         # dt가 작은 샘플에서 노이즈가 과도하게 누적되지 않도록 시간 간격에 맞춰 스케일한다.
@@ -156,10 +176,7 @@ class ParticleFilter:
         return 1.0 / np.sum(self.weights**2)
 
     def resample(self) -> None:
-        # Systematic resampling
-        cumulative = np.cumsum(self.weights)
-        positions = (self.rng.random() + np.arange(self.num_particles)) / self.num_particles
-        indices = np.searchsorted(cumulative, positions, side="left")
+        indices = self._resamplers[self.resampling_method](self.weights, self.rng)
         self.particles = self.particles[indices]
         self.weights.fill(1.0 / self.num_particles)
 
@@ -185,7 +202,7 @@ class ParticleFilter:
 
         if run_mode in ("imu_only", "fused"):
             self.predict(control, dt)
-        if run_mode in ("gps_only", "gnss_only", "fused"):
+        if run_mode in ("gnss_only", "fused"):
             self.measurement_update(measurement)
 
         if self.effective_sample_size() < self.threshold:
@@ -214,24 +231,3 @@ class ParticleFilter:
         if self.dim == 3:
             return [2]
         return [3, 4, 5]
-
-    @staticmethod
-    def _fit_vector(values: np.ndarray, dim: int) -> np.ndarray:
-        # 벡터 길이를 상태 차원에 맞춰 자르거나 0으로 패딩
-        if values.size == dim:
-            return values
-        out = np.zeros(dim, dtype=float)
-        out[: min(dim, values.size)] = values[: min(dim, values.size)]
-        return out
-
-    @staticmethod
-    def _fit_diag(values: Iterable[float], dim: int) -> np.ndarray:
-        # 대각값 길이를 목표 차원에 맞춤
-        diag = np.asarray(values, dtype=float).reshape(-1)
-        if diag.size == dim:
-            return diag
-        if diag.size == 1:
-            return np.full(dim, float(diag.item()), dtype=float)
-        out = np.zeros(dim, dtype=float)
-        out[: min(dim, diag.size)] = diag[: min(dim, diag.size)]
-        return out

@@ -5,10 +5,12 @@ from typing import Iterable
 import numpy as np
 
 from models import measurement_model
-from models.state_model import state_dim, state_vector, zero_state
+from models.state_model import state_dim, zero_state
+from utils.math_utils import fit_diag, nearest_spd, wrap_angle
+from utils.pose_filter_common import PoseFilterMixin
 
 
-class UnscentedKalmanFilter:
+class UnscentedKalmanFilter(PoseFilterMixin):
     def __init__(
         self,
         pose_type: str = "2d",
@@ -31,12 +33,12 @@ class UnscentedKalmanFilter:
         sigma_cfg = sigma_point_config or {}
 
         default_meas_dim = 2 if pose_type == "2d" else 3
-        self.process_noise_diag = self._fit_diag(motion_cfg.get("process_noise_diag", np.zeros(self.dim)), self.dim)
+        self.process_noise_diag = fit_diag(motion_cfg.get("process_noise_diag", np.zeros(self.dim)), self.dim)
         self.measurement_indices = np.asarray(
             meas_cfg.get("position_indices", list(range(default_meas_dim))),
             dtype=int,
         )
-        self.measurement_noise_diag = self._fit_diag(
+        self.measurement_noise_diag = fit_diag(
             meas_cfg.get("measurement_noise_diag", np.ones(self.measurement_indices.size)),
             self.measurement_indices.size,
         )
@@ -63,17 +65,6 @@ class UnscentedKalmanFilter:
         ukf.initialize(init_cfg.get("mean"), init_cfg.get("cov_diag"))
         return ukf
 
-    def initialize(self, mean: Iterable[float] | None = None, cov_diag: Iterable[float] | None = None) -> None:
-        if mean is None:
-            mean_vec = zero_state(self.pose_type)
-        else:
-            mean_vec = state_vector(self._fit_vector(np.asarray(mean, dtype=float).reshape(-1), self.dim), self.pose_type)
-
-        cov = self._fit_diag(np.zeros(self.dim) if cov_diag is None else cov_diag, self.dim)
-        self.x = self._normalize_angles(mean_vec)
-        self.P = np.diag(np.clip(cov, 1e-12, None)).astype(float)
-        self.initialized = True
-
     def predict(self, control: Iterable[float] | None, dt: float) -> np.ndarray:
         if not self.initialized:
             self.initialize()
@@ -87,7 +78,7 @@ class UnscentedKalmanFilter:
 
         self.x = self._weighted_state_mean(propagated, wm)
         self.P = self._weighted_state_covariance(propagated, self.x, wc)
-        self.P = self._nearest_spd(self.P + np.diag(np.clip(self.process_noise_diag, 1e-12, None)))
+        self.P = nearest_spd(self.P + np.diag(np.clip(self.process_noise_diag, 1e-12, None)))
         return self.x.copy()
 
     def measurement_update(self, measurement: Iterable[float] | None) -> np.ndarray:
@@ -111,71 +102,21 @@ class UnscentedKalmanFilter:
             Pxz += wc[idx] * np.outer(x_res, z_res)
 
         R = np.diag(np.clip(self.measurement_noise_diag, 1e-12, None))
-        S = self._nearest_spd(S + R)
+        S = nearest_spd(S + R)
         K = Pxz @ np.linalg.inv(S)
 
         self.x = self._normalize_angles(self.x + K @ (z - z_mean))
-        self.P = self._nearest_spd(self.P - K @ S @ K.T)
+        self.P = nearest_spd(self.P - K @ S @ K.T)
         return self.x.copy()
 
-    def step(
-        self,
-        control: Iterable[float] | None,
-        measurement: Iterable[float] | None,
-        dt: float,
-        mode: str | None = None,
-    ) -> np.ndarray:
-        run_mode = self.mode if mode is None else mode
-        if run_mode in ("imu_only", "fused"):
-            self.predict(control, dt)
-        if run_mode in ("gps_only", "gnss_only", "fused"):
-            self.measurement_update(measurement)
-        return self.estimate_pose()
-
-    def run(self, dataset: list[dict], mode: str | None = None) -> np.ndarray:
-        estimates = []
-        for sample in dataset:
-            estimates.append(
-                self.step(
-                    sample.get("control"),
-                    sample.get("measurement"),
-                    float(sample.get("dt", 1.0)),
-                    mode=mode,
-                )
-            )
-        if not estimates:
-            return np.zeros((0, self.dim), dtype=float)
-        return np.vstack(estimates)
-
-    def estimate_pose(self) -> np.ndarray:
-        return self._normalize_angles(self.x.copy())
-
-    def _transition_function(self, x: np.ndarray, control: np.ndarray, dt: float) -> np.ndarray:
-        if self.pose_type == "2d":
-            if control.size < 2:
-                raise ValueError("2D control must contain at least [speed, yaw_rate].")
-            speed, yaw_rate = control[0], control[1]
-            yaw = x[2]
-            x_next = x.copy()
-            x_next[0] += speed * np.cos(yaw) * dt
-            x_next[1] += speed * np.sin(yaw) * dt
-            x_next[2] += yaw_rate * dt
-            return self._normalize_angles(x_next)
-
-        if control.size < 6:
-            raise ValueError("3D control must contain at least 6 values.")
-        x_next = x.copy()
-        x_next[:6] += control[:6] * dt
-        return self._normalize_angles(x_next)
-
     def _sigma_points(self, mean: np.ndarray, cov: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        cov = self._nearest_spd(cov, eps=1e-12)
+        cov = nearest_spd(cov, eps=1e-12)
         scale = self.dim + self.lambda_
-        scaled_cov = self._nearest_spd(scale * cov, eps=1e-12)
+        scaled_cov = nearest_spd(scale * cov, eps=1e-12)
         try:
             chol = np.linalg.cholesky(scaled_cov)
         except np.linalg.LinAlgError:
-            chol = np.linalg.cholesky(self._nearest_spd(scaled_cov + 1e-6 * np.eye(self.dim), eps=1e-9))
+            chol = np.linalg.cholesky(nearest_spd(scaled_cov + 1e-6 * np.eye(self.dim), eps=1e-9))
 
         sigma = np.zeros((2 * self.dim + 1, self.dim), dtype=float)
         sigma[0] = self._normalize_angles(mean)
@@ -202,53 +143,10 @@ class UnscentedKalmanFilter:
         for idx in range(sigma_points.shape[0]):
             residual = self._state_residual(sigma_points[idx], mean)
             cov += weights[idx] * np.outer(residual, residual)
-        return self._nearest_spd(cov)
+        return nearest_spd(cov)
 
     def _state_residual(self, x: np.ndarray, mean: np.ndarray) -> np.ndarray:
         residual = np.asarray(x, dtype=float) - np.asarray(mean, dtype=float)
         for idx in self._angle_indices():
-            residual[idx] = self._wrap_angle(residual[idx])
+            residual[idx] = wrap_angle(residual[idx])
         return residual
-
-    def _normalize_angles(self, x: np.ndarray) -> np.ndarray:
-        x = np.asarray(x, dtype=float).reshape(-1).copy()
-        for idx in self._angle_indices():
-            x[idx] = self._wrap_angle(x[idx])
-        return x
-
-    def _angle_indices(self) -> list[int]:
-        return [2] if self.pose_type == "2d" else [3, 4, 5]
-
-    @staticmethod
-    def _wrap_angle(angle: float) -> float:
-        return float(np.arctan2(np.sin(angle), np.cos(angle)))
-
-    @staticmethod
-    def _nearest_spd(matrix: np.ndarray, eps: float = 1e-9) -> np.ndarray:
-        matrix = np.asarray(matrix, dtype=float)
-        matrix = 0.5 * (matrix + matrix.T)
-        eigvals, eigvecs = np.linalg.eigh(matrix)
-        eigvals = np.maximum(eigvals, eps)
-        spd = eigvecs @ np.diag(eigvals) @ eigvecs.T
-        return 0.5 * (spd + spd.T)
-
-    @staticmethod
-    def _fit_vector(values: np.ndarray, dim: int) -> np.ndarray:
-        if values.size == dim:
-            return values
-        out = np.zeros(dim, dtype=float)
-        out[: min(dim, values.size)] = values[: min(dim, values.size)]
-        return out
-
-    @staticmethod
-    def _fit_diag(values: Iterable[float], dim: int) -> np.ndarray:
-        diag = np.asarray(values, dtype=float).reshape(-1)
-        if diag.size == dim:
-            return diag
-        if diag.size == 1:
-            return np.full(dim, float(diag.item()), dtype=float)
-        out = np.zeros(dim, dtype=float)
-        out[: min(dim, diag.size)] = diag[: min(dim, diag.size)]
-        if diag.size < dim and diag.size > 0:
-            out[diag.size :] = diag[-1]
-        return out

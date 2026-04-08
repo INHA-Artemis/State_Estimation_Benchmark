@@ -8,6 +8,7 @@ It provides a unified pipeline for loading datasets, generating a common CSV rep
 Implemented filters:
 - Extended Kalman Filter (EKF)
 - Unscented Kalman Filter (UKF)
+- Invariant Kalman Filter (InEKF)
 - Particle Filter (PF)
 
 Current state representations:
@@ -64,6 +65,7 @@ State_Estimation_Benchmark/
 ├── config/
 │   ├── dataset_config.yaml
 │   ├── ekf.yaml
+│   ├── inekf.yaml
 │   ├── pf.yaml
 │   └── ukf.yaml
 ├── datasets/
@@ -71,12 +73,16 @@ State_Estimation_Benchmark/
 │   ├── m2dgr_loader.py
 │   └── rosbag_loader.py
 ├── examples/
+│   ├── plot_dataset_before.py
 │   ├── run_ekf.py
+│   ├── run_inekf.py
 │   ├── run_pf.py
 │   └── run_ukf.py
 ├── filters/
 │   ├── estimated_kalman_filter.py
+│   ├── invariant_kalman_filter.py
 │   ├── particle_filter.py
+│   ├── particle_filter_resampling_algo/
 │   └── unscented_kalman_filter.py
 ├── models/
 │   ├── measurement_model.py
@@ -84,9 +90,14 @@ State_Estimation_Benchmark/
 │   └── state_model.py
 └── utils/
     ├── csv_dataset.py
+    ├── dataset_loader_utils.py
+    ├── filter_config.py
+    ├── filter_initialization.py
     ├── generate_gnss.py
     ├── generate_imu.py
     ├── math_utils.py
+    ├── pose_filter_common.py
+    ├── prepare_dataset.py
     ├── rotation_utils.py
     ├── save_estimates.py
     ├── visualization.py
@@ -111,46 +122,21 @@ All filters follow the same high-level flow:
 5. Run the filter
 6. Save estimate CSV, trajectory plot, error plot, and optional animation
 
-## How To Run Kalman Filters
+## How To Run Filters
 
-Run EKF:
-
-```bash
-cd /workspace/State_Estimation_Benchmark
-python3 examples/run_ekf.py
-```
-
-Run UKF:
+All filter runners follow the same pattern:
 
 ```bash
 cd /workspace/State_Estimation_Benchmark
-python3 examples/run_ukf.py
+python3 examples/run_<filter>.py
 ```
 
-Run PF:
+For example, `<filter>` is the suffix used by the matching runner file under `examples/`.
+
+To inspect the dataset before filtering:
 
 ```bash
-cd /workspace/State_Estimation_Benchmark
-python3 examples/run_pf.py
-```
-
-Override config paths explicitly:
-
-```bash
-python3 examples/run_ekf.py \
-  --dataset-config config/dataset_config.yaml \
-  --ekf-config config/ekf.yaml \
-  --output-dir outputs
-
-python3 examples/run_ukf.py \
-  --dataset-config config/dataset_config.yaml \
-  --ukf-config config/ukf.yaml \
-  --output-dir outputs
-
-python3 examples/run_pf.py \
-  --dataset-config config/dataset_config.yaml \
-  --pf-config config/pf.yaml \
-  --output-dir outputs
+python3 examples/plot_dataset_before.py --source both
 ```
 
 ## Configuration
@@ -178,16 +164,7 @@ Dataset-specific sections and reference links:
 
 ### Filter Configs
 
-PF:
-- `config/pf.yaml`
-
-EKF:
-- `config/ekf.yaml`
-
-UKF:
-- `config/ukf.yaml`
-
-Common filter config sections:
+Filter configs live under `config/` and follow the same broad layout:
 - `initialization`
 - `motion_model`
 - `measurement_model`
@@ -195,92 +172,13 @@ Common filter config sections:
 - `visualization`
 - `output`
 
-UKF-only section:
-- `sigma_points`
+Some filters add their own section, such as UKF `sigma_points` or PF particle/resampling settings.
 
 ## Dataset Examples
 
-### EuRoC
+Select a dataset by editing `config/dataset_config.yaml`.
 
-Example dataset config values:
-
-```yaml
-dataset_type: euroc
-dataset_name: euroc
-pose_type: 6d
-mode: fused
-generated_csv_path: outputs/euroc.csv
-
-euroc_imu_csv: /path/to/euroc/mav0/imu0/data.csv
-euroc_gt_csv: /path/to/euroc/mav0/state_groundtruth_estimate0/data.csv
-euroc_use_gt_as_gnss: true
-
-gnss_noise_std: [0.7, 0.7, 0.7]
-```
-
-Run:
-
-```bash
-python3 examples/run_ekf.py
-python3 examples/run_ukf.py
-python3 examples/run_pf.py
-```
-
-### M2DGR
-
-Example dataset config values:
-
-```yaml
-dataset_type: m2dgr
-dataset_name: street_01
-pose_type: 6d
-mode: fused
-generated_csv_path: outputs/m2dgr.csv
-
-m2dgr_bag_path: /m2dgr_dataset/M2DGR/street_01.bag
-m2dgr_gt_txt_path: /m2dgr_dataset/M2DGR/street_01.txt
-m2dgr_imu_topic: /handsfree/imu
-m2dgr_gnss_topic: /ublox/fix
-m2dgr_linear_source: gt_velocity
-m2dgr_use_gt_as_gnss: false
-
-gnss_noise_std: [0.7, 0.7, 0.7]
-```
-
-Run:
-
-```bash
-python3 examples/run_ekf.py
-python3 examples/run_ukf.py
-python3 examples/run_pf.py
-```
-
-### ROS Bag
-
-Example dataset config values:
-
-```yaml
-dataset_type: rosbag
-dataset_name: kaistvio
-pose_type: 6d
-mode: fused
-
-rosbag_path: /path/to/your_rosbag
-rosbag_imu_topic: /mavros/imu/data
-rosbag_gt_topic: /pose_transformed
-rosbag_linear_source: gt_velocity
-rosbag_use_gt_as_gnss: true
-```
-
-Supported path formats:
-- ROS1 `.bag`
-- ROS2 bag directory
-- ROS2 `metadata.yaml`
-- ROS2 `.db3`
-
-### Synthetic
-
-Example dataset config values:
+Minimal synthetic example:
 
 ```yaml
 dataset_type: synthetic
@@ -292,11 +190,36 @@ dt: 0.1
 seed: 10
 ```
 
-Recommended for PF benchmark comparisons:
+Minimal external dataset examples:
 
 ```yaml
-num_particles: 3000
+# EuRoC
+dataset_type: euroc
+euroc_imu_csv: /path/to/euroc/mav0/imu0/data.csv
+euroc_gt_csv: /path/to/euroc/mav0/state_groundtruth_estimate0/data.csv
 ```
+
+```yaml
+# ROS bag
+dataset_type: rosbag
+rosbag_path: /path/to/your_rosbag
+rosbag_imu_topic: /mavros/imu/data
+rosbag_gt_topic: /pose_transformed
+```
+
+```yaml
+# M2DGR
+dataset_type: m2dgr
+m2dgr_bag_path: /m2dgr_dataset/M2DGR/street_01.bag
+m2dgr_gt_txt_path: /m2dgr_dataset/M2DGR/street_01.txt
+m2dgr_imu_topic: /handsfree/imu
+m2dgr_gnss_topic: /ublox/fix
+```
+
+Common mode options:
+- `imu_only`: prediction only
+- `gnss_only`: measurement update only
+- `fused`: prediction + measurement update
 
 ## Single-Dataset Benchmark Comparison
 
@@ -399,42 +322,6 @@ Build the image:
 ```bash
 docker build -t state-estimation-benchmark:latest .
 ```
-
-Run the default container command:
-- the current `Dockerfile` default command runs PF
-
-```bash
-docker run --rm   -v "$(pwd)/outputs:/app/outputs"   state-estimation-benchmark:latest
-```
-
-Run PF explicitly:
-
-```bash
-docker run --rm   -v "$(pwd)/outputs:/app/outputs"   state-estimation-benchmark:latest   python3 examples/run_pf.py
-```
-
-Run EKF:
-
-```bash
-docker run --rm   -v "$(pwd)/outputs:/app/outputs"   state-estimation-benchmark:latest   python3 examples/run_ekf.py
-```
-
-Run UKF:
-
-```bash
-docker run --rm   -v "$(pwd)/outputs:/app/outputs"   state-estimation-benchmark:latest   python3 examples/run_ukf.py
-```
-
-Run with explicit config overrides:
-
-```bash
-docker run --rm   -v "$(pwd)/outputs:/app/outputs"   -v "$(pwd)/config:/app/config"   state-estimation-benchmark:latest   python3 examples/run_ekf.py   --dataset-config /app/config/dataset_config.yaml   --ekf-config /app/config/ekf.yaml   --output-dir /app/outputs
-```
-
-Notes:
-- mount `outputs` if you want result files on the host machine
-- the image installs `ffmpeg`, so mp4 animation export can work inside the container
-- if your dataset paths are outside the repository, mount those paths into the container as well
 
 ## References
 

@@ -5,7 +5,8 @@ from pathlib import Path
 
 import numpy as np
 
-from utils.rotation_utils import _rot_to_rpy
+from utils.dataset_loader_utils import build_noisy_position_measurements, nearest_indices
+from utils.rotation_utils import quat_to_rpy
 
 
 def load_euroc_dataset(dataset_cfg: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -25,11 +26,7 @@ def load_euroc_dataset(dataset_cfg: dict) -> tuple[np.ndarray, np.ndarray, np.nd
     gt = gt[valid_mask]
     velocities = velocities[valid_mask]
 
-    imu_indices = np.searchsorted(imu_timestamps, gt_timestamps)
-    imu_indices = np.clip(imu_indices, 1, len(imu_timestamps) - 1)
-    prev_indices = imu_indices - 1
-    use_prev = np.abs(gt_timestamps - imu_timestamps[prev_indices]) <= np.abs(gt_timestamps - imu_timestamps[imu_indices])
-    imu_indices = np.where(use_prev, prev_indices, imu_indices)
+    imu_indices = nearest_indices(imu_timestamps, gt_timestamps)
 
     controls = np.zeros((len(gt_timestamps), 6), dtype=float)
     controls[:, :3] = velocities
@@ -42,7 +39,7 @@ def load_euroc_dataset(dataset_cfg: dict) -> tuple[np.ndarray, np.ndarray, np.nd
     else:
         dt[0] = float(dataset_cfg.get("dt", 0.005))
 
-    measurements = _build_position_measurements(gt, dataset_cfg)
+    measurements = build_noisy_position_measurements(gt, dataset_cfg, "euroc_use_gt_as_gnss")
     return controls, measurements, gt, dt, gt_timestamps
 
 
@@ -81,7 +78,7 @@ def _load_ground_truth_csv(csv_path: Path) -> tuple[np.ndarray, np.ndarray, np.n
             quat_x = float(row["q_RS_x []"])
             quat_y = float(row["q_RS_y []"])
             quat_z = float(row["q_RS_z []"])
-            rpy = _quat_to_rpy(quat_w, quat_x, quat_y, quat_z)
+            rpy = quat_to_rpy(quat_w, quat_x, quat_y, quat_z)
 
             gt_rows.append(
                 [
@@ -108,33 +105,3 @@ def _load_ground_truth_csv(csv_path: Path) -> tuple[np.ndarray, np.ndarray, np.n
         np.asarray(gt_rows, dtype=float),
         np.asarray(velocity_rows, dtype=float),
     )
-
-
-def _quat_to_rpy(w: float, x: float, y: float, z: float) -> np.ndarray:
-    R = np.array(
-        [
-            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
-            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
-            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
-        ],
-        dtype=float,
-    )
-    return _rot_to_rpy(R)
-
-
-def _build_position_measurements(gt: np.ndarray, dataset_cfg: dict) -> np.ndarray:
-    if not bool(dataset_cfg.get("euroc_use_gt_as_gnss", True)):
-        return np.zeros((len(gt), 3), dtype=float)
-
-    seed = int(dataset_cfg.get("seed", 10))
-    rng = np.random.default_rng(seed)
-    default_std = np.array([0.7, 0.7, 0.7], dtype=float)
-    meas_std = np.asarray(dataset_cfg.get("gnss_noise_std", default_std), dtype=float).reshape(-1)
-    if meas_std.size == 1:
-        meas_std = np.full(3, float(meas_std.item()), dtype=float)
-    elif meas_std.size == 2:
-        meas_std = np.array([meas_std[0], meas_std[1], meas_std[1]], dtype=float)
-    elif meas_std.size > 3:
-        meas_std = meas_std[:3]
-
-    return gt[:, :3] + rng.normal(0.0, meas_std, size=(len(gt), 3))

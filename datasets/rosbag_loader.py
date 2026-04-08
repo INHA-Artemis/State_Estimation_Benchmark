@@ -5,7 +5,15 @@ from typing import Any
 
 import numpy as np
 
-from utils.rotation_utils import _rot_to_rpy
+from utils.dataset_loader_utils import (
+    build_noisy_position_measurements,
+    estimate_linear_velocity,
+    message_timestamp_ns,
+    nearest_indices,
+    normalize_bag_path,
+    sort_by_timestamp,
+)
+from utils.rotation_utils import quat_to_rpy
 
 try:
     from rosbags.highlevel import AnyReader
@@ -20,7 +28,7 @@ def load_rosbag_dataset(dataset_cfg: dict) -> tuple[np.ndarray, np.ndarray, np.n
             "Install it with `pip install rosbags`."
         )
 
-    bag_path = _normalize_bag_path(Path(dataset_cfg["rosbag_path"]))
+    bag_path = normalize_bag_path(Path(dataset_cfg["rosbag_path"]))
     imu_topic = str(dataset_cfg.get("rosbag_imu_topic", "/mavros/imu/data"))
     gt_topic = str(dataset_cfg.get("rosbag_gt_topic", "/pose_transformed"))
     linear_source = str(dataset_cfg.get("rosbag_linear_source", "accel")).strip().lower()
@@ -37,11 +45,11 @@ def load_rosbag_dataset(dataset_cfg: dict) -> tuple[np.ndarray, np.ndarray, np.n
     gt_timestamps = gt_timestamps[valid_mask]
     gt = gt[valid_mask]
 
-    imu_indices = _nearest_indices(imu_timestamps, gt_timestamps)
+    imu_indices = nearest_indices(imu_timestamps, gt_timestamps)
     gyro_samples = gyro[imu_indices]
 
     if linear_source == "gt_velocity":
-        linear_samples = _estimate_linear_velocity(gt_timestamps, gt[:, :3])
+        linear_samples = estimate_linear_velocity(gt_timestamps, gt[:, :3])
     elif linear_source == "accel":
         linear_samples = accel[imu_indices]
     else:
@@ -58,21 +66,8 @@ def load_rosbag_dataset(dataset_cfg: dict) -> tuple[np.ndarray, np.ndarray, np.n
     else:
         dt[0] = float(dataset_cfg.get("dt", 0.005))
 
-    measurements = _build_position_measurements(gt, dataset_cfg)
+    measurements = build_noisy_position_measurements(gt, dataset_cfg, "rosbag_use_gt_as_gnss")
     return controls, measurements, gt, dt, gt_timestamps
-
-
-def _normalize_bag_path(bag_path: Path) -> Path:
-    bag_path = bag_path.expanduser()
-    if not bag_path.exists():
-        raise FileNotFoundError(f"Bag path does not exist: {bag_path}")
-
-    # ROS2 bag inputs may be passed as the bag directory, metadata.yaml, or a .db3 file.
-    if bag_path.is_file() and bag_path.name == "metadata.yaml":
-        return bag_path.parent
-    if bag_path.is_file() and bag_path.suffix == ".db3":
-        return bag_path.parent
-    return bag_path
 
 
 def _load_imu_messages(bag_path: Path, topic: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -88,7 +83,7 @@ def _load_imu_messages(bag_path: Path, topic: str) -> tuple[np.ndarray, np.ndarr
 
         for connection, timestamp, rawdata in reader.messages(connections=connections):
             msg = reader.deserialize(rawdata, connection.msgtype)
-            msg_timestamp = _message_timestamp_ns(msg, timestamp)
+            msg_timestamp = message_timestamp_ns(msg, timestamp)
             timestamps.append(msg_timestamp)
             accel_rows.append(
                 [
@@ -108,7 +103,7 @@ def _load_imu_messages(bag_path: Path, topic: str) -> tuple[np.ndarray, np.ndarr
     if not timestamps:
         raise ValueError(f"No IMU messages found on topic '{topic}'.")
 
-    return _sort_by_timestamp(
+    return sort_by_timestamp(
         np.asarray(timestamps, dtype=np.int64),
         np.asarray(accel_rows, dtype=float),
         np.asarray(gyro_rows, dtype=float),
@@ -128,8 +123,8 @@ def _load_gt_messages(bag_path: Path, topic: str) -> tuple[np.ndarray, np.ndarra
         for connection, timestamp, rawdata in reader.messages(connections=connections):
             msg = reader.deserialize(rawdata, connection.msgtype)
             pose = _extract_pose(msg)
-            msg_timestamp = _message_timestamp_ns(msg, timestamp)
-            rpy = _quat_to_rpy(
+            msg_timestamp = message_timestamp_ns(msg, timestamp)
+            rpy = quat_to_rpy(
                 float(pose["orientation"][3]),
                 float(pose["orientation"][0]),
                 float(pose["orientation"][1]),
@@ -150,7 +145,7 @@ def _load_gt_messages(bag_path: Path, topic: str) -> tuple[np.ndarray, np.ndarra
     if not timestamps:
         raise ValueError(f"No ground-truth messages found on topic '{topic}'.")
 
-    timestamps_np, gt_np = _sort_by_timestamp(np.asarray(timestamps, dtype=np.int64), np.asarray(gt_rows, dtype=float))
+    timestamps_np, gt_np = sort_by_timestamp(np.asarray(timestamps, dtype=np.int64), np.asarray(gt_rows, dtype=float))
     return timestamps_np, gt_np
 
 
@@ -179,77 +174,3 @@ def _extract_pose(msg: Any) -> dict[str, np.ndarray]:
         }
 
     raise TypeError("Unsupported ground-truth message type. Expected a pose-like ROS message.")
-
-
-def _message_timestamp_ns(msg: Any, fallback_timestamp: int) -> int:
-    header = getattr(msg, "header", None)
-    stamp = getattr(header, "stamp", None)
-    if stamp is None:
-        return int(fallback_timestamp)
-
-    if hasattr(stamp, "sec") and hasattr(stamp, "nanosec"):
-        return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
-    if hasattr(stamp, "secs") and hasattr(stamp, "nsecs"):
-        return int(stamp.secs) * 1_000_000_000 + int(stamp.nsecs)
-
-    return int(fallback_timestamp)
-
-
-def _sort_by_timestamp(timestamps: np.ndarray, *arrays: np.ndarray) -> tuple[np.ndarray, ...]:
-    order = np.argsort(timestamps)
-    sorted_items = [timestamps[order]]
-    for array in arrays:
-        sorted_items.append(array[order])
-    return tuple(sorted_items)
-
-
-def _nearest_indices(reference_timestamps: np.ndarray, query_timestamps: np.ndarray) -> np.ndarray:
-    indices = np.searchsorted(reference_timestamps, query_timestamps)
-    indices = np.clip(indices, 1, len(reference_timestamps) - 1)
-    prev_indices = indices - 1
-    use_prev = np.abs(query_timestamps - reference_timestamps[prev_indices]) <= np.abs(
-        query_timestamps - reference_timestamps[indices]
-    )
-    return np.where(use_prev, prev_indices, indices)
-
-
-def _estimate_linear_velocity(timestamps_ns: np.ndarray, positions: np.ndarray) -> np.ndarray:
-    velocities = np.zeros_like(positions, dtype=float)
-    if len(positions) <= 1:
-        return velocities
-
-    dt = np.diff(timestamps_ns).astype(float) * 1e-9
-    dt = np.clip(dt, 1e-9, None)
-    velocities[1:] = np.diff(positions, axis=0) / dt[:, None]
-    velocities[0] = velocities[1]
-    return velocities
-
-
-def _quat_to_rpy(w: float, x: float, y: float, z: float) -> np.ndarray:
-    rotation = np.array(
-        [
-            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
-            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
-            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
-        ],
-        dtype=float,
-    )
-    return _rot_to_rpy(rotation)
-
-
-def _build_position_measurements(gt: np.ndarray, dataset_cfg: dict) -> np.ndarray:
-    if not bool(dataset_cfg.get("rosbag_use_gt_as_gnss", True)):
-        return np.zeros((len(gt), 3), dtype=float)
-
-    seed = int(dataset_cfg.get("seed", 10))
-    rng = np.random.default_rng(seed)
-    default_std = np.array([0.7, 0.7, 0.7], dtype=float)
-    meas_std = np.asarray(dataset_cfg.get("gnss_noise_std", default_std), dtype=float).reshape(-1)
-    if meas_std.size == 1:
-        meas_std = np.full(3, float(meas_std.item()), dtype=float)
-    elif meas_std.size == 2:
-        meas_std = np.array([meas_std[0], meas_std[1], meas_std[1]], dtype=float)
-    elif meas_std.size > 3:
-        meas_std = meas_std[:3]
-
-    return gt[:, :3] + rng.normal(0.0, meas_std, size=(len(gt), 3))

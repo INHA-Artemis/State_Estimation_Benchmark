@@ -1,6 +1,7 @@
 import numpy as np
 
-def _rpy_to_rot(rpy: np.ndarray) -> np.ndarray:
+
+def rpy_to_rot(rpy: np.ndarray) -> np.ndarray:
     roll, pitch, yaw = rpy
     cr, sr = np.cos(roll), np.sin(roll)
     cp, sp = np.cos(pitch), np.sin(pitch)
@@ -12,8 +13,20 @@ def _rpy_to_rot(rpy: np.ndarray) -> np.ndarray:
     return rz @ ry @ rx
 
 
-def _rot_to_rpy(R: np.ndarray) -> np.ndarray:
-    pitch = np.arcsin(-np.clip(R[2, 0], -1.0, 1.0))
-    roll = np.arctan2(R[2, 1], R[2, 2])
-    yaw = np.arctan2(R[1, 0], R[0, 0])
+def rot_to_rpy(rotation: np.ndarray) -> np.ndarray:
+    pitch = np.arcsin(-np.clip(rotation[2, 0], -1.0, 1.0))
+    roll = np.arctan2(rotation[2, 1], rotation[2, 2])
+    yaw = np.arctan2(rotation[1, 0], rotation[0, 0])
     return np.array([roll, pitch, yaw], dtype=float)
+
+
+def quat_to_rpy(w: float, x: float, y: float, z: float) -> np.ndarray:
+    rotation = np.array(
+        [
+            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+        ],
+        dtype=float,
+    )
+    return rot_to_rpy(rotation)

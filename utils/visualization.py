@@ -82,6 +82,67 @@ def plot_results(
     plt.close(fig)
 
 
+
+
+def control_trajectory_from_dataset(dataset: list[dict], gt: np.ndarray, pose_type: str) -> np.ndarray | None:
+    if gt.size == 0:
+        return gt.copy()
+
+    trajectory = gt.copy()
+    state = gt[0].copy()
+    trajectory[0] = state
+
+    for idx in range(1, len(dataset)):
+        sample = dataset[idx]
+        control = sample.get("raw_control", sample.get("control"))
+        if control is None:
+            return None
+
+        control_vec = np.asarray(control, dtype=float).reshape(-1)
+        dt = float(sample.get("dt", 1.0))
+        state = state.copy()
+
+        if pose_type == "2d":
+            if control_vec.size < 2:
+                return None
+            speed, yaw_rate = control_vec[0], control_vec[1]
+            state[0] += speed * np.cos(state[2]) * dt
+            state[1] += speed * np.sin(state[2]) * dt
+            state[2] = np.arctan2(np.sin(state[2] + yaw_rate * dt), np.cos(state[2] + yaw_rate * dt))
+        else:
+            if control_vec.size < 6:
+                return None
+            state[:6] += control_vec[:6] * dt
+            state[3:6] = np.arctan2(np.sin(state[3:6]), np.cos(state[3:6]))
+
+        trajectory[idx] = state
+
+    return trajectory
+
+
+def measurement_trajectory_from_dataset(dataset: list[dict], gt: np.ndarray, pose_type: str) -> np.ndarray | None:
+    if gt.size == 0:
+        return gt.copy()
+
+    pos_dim = 2 if pose_type == "2d" else 3
+    measurements = []
+    for sample in dataset:
+        measurement = sample.get("raw_measurement", sample.get("measurement"))
+        if measurement is None:
+            return None
+        measurement_vec = np.asarray(measurement, dtype=float).reshape(-1)
+        if measurement_vec.size < pos_dim:
+            return None
+        measurements.append(measurement_vec[:pos_dim])
+
+    if not measurements:
+        return np.zeros((0, gt.shape[1]), dtype=float)
+
+    trajectory = gt.copy()
+    measurement_positions = np.vstack(measurements)
+    trajectory[: measurement_positions.shape[0], :pos_dim] = measurement_positions
+    return trajectory
+
 def plot_position_error_norm(
     estimates: np.ndarray,
     gt: np.ndarray,

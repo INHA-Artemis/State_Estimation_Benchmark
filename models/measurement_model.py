@@ -25,33 +25,3 @@ def h(x_t, indices: Optional[Sequence[int]] = None) -> np.ndarray:
             )
 
     return x_t[np.asarray(indices, dtype=int)]
-
-
-def measure(
-    x_t,
-    indices: Optional[Sequence[int]] = None,
-    v_t=None,
-    measurement_cov=None,
-    rng: Optional[np.random.Generator] = None,
-) -> np.ndarray:
-    """
-    측정 모델:
-        z_t = h(x_t) + v_t
-    """
-    z_nominal = h(x_t, indices=indices)
-    dim = z_nominal.size
-
-    if v_t is not None:
-        noise = np.asarray(v_t, dtype=float).reshape(-1)
-        if noise.size != dim:
-            raise ValueError("v_t size must match measurement size.")
-    elif measurement_cov is not None:
-        cov = np.asarray(measurement_cov, dtype=float)
-        if cov.shape != (dim, dim):
-            raise ValueError("measurement_cov must be shape (meas_dim, meas_dim).")
-        generator = np.random.default_rng() if rng is None else rng
-        noise = generator.multivariate_normal(np.zeros(dim), cov)
-    else:
-        noise = np.zeros(dim, dtype=float)
-
-    return z_nominal + noise
