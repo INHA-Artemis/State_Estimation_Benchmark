@@ -2,7 +2,7 @@
 dataset_type: synthetic # options: synthetic, euroc, rosbag, m2dgr
 dataset_name: synthetic_test # output/logging name
 pose_type: 2d # options: 2d, 6d
-mode: imu_only # options: imu_only, gnss_only, fused
+mode: fused # options: imu_only, gnss_only, fused
 
 # Synthetic dataset.
 sequence_length: 500
@@ -28,10 +28,10 @@ m2dgr_gt_txt_path: /m2dgr_dataset/M2DGR/street_01.txt
 m2dgr_imu_topic: /handsfree/imu
 m2dgr_gnss_topic: /ublox/fix
 m2dgr_linear_source: accel # options: accel, gt_velocity
-m2dgr_use_gt_as_gnss: false
+m2dgr_use_gt_as_gnss: true
 
 # Sensor/noise settings.
 use_imu: true
-use_gnss: false
+use_gnss: true
 imu_noise_std: [0.05, 0.02]
 gnss_noise_std: [0.05, 0.05, 0.05]

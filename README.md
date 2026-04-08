@@ -58,52 +58,6 @@ The EKF and UKF were intentionally kept simple to match the repository style use
 | **IMU on/off** | X | X | X | X | X | O |
 | **GPS on/off** | X | X | X | X | X | O |
 
-## Repository Structure
-
-```text
-State_Estimation_Benchmark/
-├── config/
-│   ├── dataset_config.yaml
-│   ├── ekf.yaml
-│   ├── inekf.yaml
-│   ├── pf.yaml
-│   └── ukf.yaml
-├── datasets/
-│   ├── euroc_loader.py
-│   ├── m2dgr_loader.py
-│   └── rosbag_loader.py
-├── examples/
-│   ├── plot_dataset_before.py
-│   ├── run_ekf.py
-│   ├── run_inekf.py
-│   ├── run_pf.py
-│   └── run_ukf.py
-├── filters/
-│   ├── estimated_kalman_filter.py
-│   ├── invariant_kalman_filter.py
-│   ├── particle_filter.py
-│   ├── particle_filter_resampling_algo/
-│   └── unscented_kalman_filter.py
-├── models/
-│   ├── measurement_model.py
-│   ├── motion_model.py
-│   └── state_model.py
-└── utils/
-    ├── csv_dataset.py
-    ├── dataset_loader_utils.py
-    ├── filter_config.py
-    ├── filter_initialization.py
-    ├── generate_gnss.py
-    ├── generate_imu.py
-    ├── math_utils.py
-    ├── pose_filter_common.py
-    ├── prepare_dataset.py
-    ├── rotation_utils.py
-    ├── save_estimates.py
-    ├── visualization.py
-    └── yaml_loader.py
-```
-
 ## Installation
 
 ```bash
@@ -244,6 +198,19 @@ Synthetic `synthetic_test`, `2d`, `500` steps:
 PF can look worse in `imu_only` because no measurement update is available to reweight particles.
 With nonzero initial covariance and process noise, particles spread over time and the estimate is only the weighted particle mean.
 For PF, the meaningful filtering case is usually `fused`: IMU prediction followed by GNSS measurement update.
+
+The same `synthetic_test`, `2d`, `500` step setup in `fused` mode gives the following filter results.
+PF used `6000` particles in this run.
+
+| Filter | Mode | RMSE (position) | Runtime (filter only) | Note |
+| --- | --- | ---: | ---: | --- |
+| PF | `fused` | `0.0252` | `0.118 sec` | IMU prediction + GNSS update |
+| EKF | `fused` | `0.0245` | `0.025 sec` | IMU prediction + GNSS update |
+| InEKF | `fused` | `0.0245` | `0.027 sec` | IMU prediction + GNSS update |
+| UKF | `fused` | `0.0451` | `0.105 sec` | IMU prediction + GNSS update |
+
+Compared with raw GNSS (`0.0705`) and deterministic IMU-only (`0.1731`), the fused runs show the expected correction effect.
+PF, EKF, and InEKF are close on this synthetic case, while UKF is still improved over raw GNSS but less tight under the current config.
 
 ## Single-Dataset Benchmark Comparison
 
