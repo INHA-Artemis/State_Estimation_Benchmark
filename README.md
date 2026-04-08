@@ -183,20 +183,20 @@ The outlier rows use `gnss_noise_model: outlier_mixture`, `gnss_outlier_prob: 0.
 
 | Scenario | Case | Mode / Source | RMSE (position) | Runtime (filter only) | Note |
 | --- | --- | --- | ---: | ---: | --- |
-| Clean | Before GNSS | `--source gnss` | `0.0705` | - | raw GNSS vs GT |
-| Clean | Before IMU-only | `--source imu` | `0.1731` | - | deterministic open-loop |
-| Clean | EKF | `imu_only` | `0.2573` | - | prediction only |
-| Clean | InEKF | `imu_only` | `0.1750` | - | prediction only |
-| Clean | PF | `imu_only` | `3.2280` | - | no measurement reweighting |
-| Clean | UKF | `imu_only` | `12.1211` | - | prediction only |
-| Clean | PF | `fused` | `0.0252` | `0.118 sec` | 6000 particles |
-| Clean | EKF | `fused` | `0.0245` | `0.025 sec` | IMU + GNSS |
-| Clean | InEKF | `fused` | `0.0245` | `0.027 sec` | IMU + GNSS |
-| Clean | UKF | `fused` | `0.0451` | `0.105 sec` | IMU + GNSS |
-| GNSS outlier | PF | `fused` | `0.1712` | `0.123 sec` | 3000 particles, Gaussian likelihood |
-| GNSS outlier | EKF | `fused` | `0.2502` | `0.025 sec` | Gaussian update |
-| GNSS outlier | InEKF | `fused` | `0.2502` | `0.027 sec` | Gaussian update |
-| GNSS outlier | UKF | `fused` | `0.2526` | `0.104 sec` | Gaussian update |
+| **Clean** | Before GNSS | `--source gnss` | `0.0705` | - | raw GNSS vs GT |
+|  | Before IMU-only | `--source imu` | `0.1731` | - | deterministic open-loop |
+|  | EKF | `imu_only` | `0.2573` | - | prediction only |
+|  | InEKF | `imu_only` | `0.1750` | - | prediction only |
+|  | PF | `imu_only` | `3.2280` | - | no measurement reweighting |
+|  | UKF | `imu_only` | `12.1211` | - | prediction only |
+|  | PF | `fused` | `0.0252` | `0.118 sec` | 6000 particles |
+|  | EKF | `fused` | `0.0245` | `0.025 sec` | IMU + GNSS |
+|  | InEKF | `fused` | `0.0245` | `0.027 sec` | IMU + GNSS |
+|  | UKF | `fused` | `0.0451` | `0.105 sec` | IMU + GNSS |
+| **GNSS outlier** | PF | `fused` | `0.1712` | `0.123 sec` | 3000 particles, Gaussian likelihood |
+|  | EKF | `fused` | `0.2502` | `0.025 sec` | Gaussian update |
+|  | InEKF | `fused` | `0.2502` | `0.027 sec` | Gaussian update |
+|  | UKF | `fused` | `0.2526` | `0.104 sec` | Gaussian update |
 
 Key takeaways: clean fused runs are much better than raw GNSS or IMU-only baselines; `imu_only` PF can perform poorly because no measurement update exists to reweight particles; under GNSS outliers, PF degrades less than EKF/UKF/InEKF in the current run.
 The next PF check is to switch to `likelihood_model: gaussian_mixture` and compare the robust outlier result.
