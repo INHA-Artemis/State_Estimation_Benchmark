@@ -156,24 +156,24 @@ All rows below use `synthetic_test`, `2d`, `500` steps.
 `Before` rows are raw-input baselines; filter rows are actual estimator runs.
 The outlier rows use `gnss_noise_model: outlier_mixture`, `gnss_outlier_prob: 0.1`, and `gnss_outlier_std: [2.0, 2.0, 2.0]`; the PF outlier run uses `3000` particles with Gaussian likelihood.
 
-| Scenario | Case | Mode / Source | RMSE (position) | Runtime (filter only) | Note |
+| Group | Case | Mode / Source | RMSE (position) | Runtime (filter only) | Note |
 | --- | --- | --- | ---: | ---: | --- |
-| **Clean** | Before GNSS | `--source gnss` | `0.0705` | - | raw GNSS vs GT |
-|  | Before IMU-only | `--source imu` | `0.1731` | - | deterministic open-loop |
+| **Before GNSS** | Raw GNSS | `--source gnss` | `0.0705` | - | raw GNSS vs GT |
+| **Before IMU-only** | Open-loop control | `--source imu` | `0.1731` | - | deterministic control integration |
+| **imu-only** | InEKF | `imu_only` | `0.1750` | - | prediction only |
 |  | EKF | `imu_only` | `0.2573` | - | prediction only |
-|  | InEKF | `imu_only` | `0.1750` | - | prediction only |
 |  | PF | `imu_only` | `3.2280` | - | no measurement reweighting |
 |  | UKF | `imu_only` | `12.1211` | - | prediction only |
-|  | PF | `fused` | `0.0252` | `0.118 sec` | 6000 particles |
-|  | EKF | `fused` | `0.0245` | `0.025 sec` | IMU + GNSS |
+| **fused** | EKF | `fused` | `0.0245` | `0.025 sec` | IMU + GNSS |
 |  | InEKF | `fused` | `0.0245` | `0.027 sec` | IMU + GNSS |
+|  | PF | `fused` | `0.0252` | `0.118 sec` | 6000 particles |
 |  | UKF | `fused` | `0.0451` | `0.105 sec` | IMU + GNSS |
 | **GNSS outlier** | PF | `fused` | `0.1712` | `0.123 sec` | 3000 particles, Gaussian likelihood |
 |  | EKF | `fused` | `0.2502` | `0.025 sec` | Gaussian update |
 |  | InEKF | `fused` | `0.2502` | `0.027 sec` | Gaussian update |
 |  | UKF | `fused` | `0.2526` | `0.104 sec` | Gaussian update |
 
-Key takeaways: clean fused runs improve over raw GNSS and IMU-only baselines; `imu_only` PF can perform poorly because particles are not reweighted; under GNSS outliers, PF degrades less than EKF/UKF/InEKF in the current run.
+Key takeaways: `fused` runs improve over both before-filter baselines; `imu_only` PF can perform poorly because particles are not reweighted; under GNSS outliers, PF degrades less than EKF/UKF/InEKF in the current run.
 The next PF check is `likelihood_model: gaussian_mixture` for the robust outlier case.
 
 ## Additional Benchmark Results
