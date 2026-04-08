@@ -175,96 +175,31 @@ Common mode options:
 - `gnss_only`: measurement update only
 - `fused`: prediction + measurement update
 
-## Before/IMU-Only Comparison
+## Synthetic Comparison Summary
 
-For input-only checks, `examples/plot_dataset_before.py` compares raw inputs against GT before any filter correction.
-This is different from running a filter in `imu_only` mode.
+All rows below use `synthetic_test`, `2d`, `500` steps.
+`Before` rows are raw-input baselines, while filter rows are actual estimator runs.
+The outlier rows use `gnss_noise_model: outlier_mixture`, `gnss_outlier_prob: 0.1`, and `gnss_outlier_std: [2.0, 2.0, 2.0]`; the PF outlier run uses `3000` particles with Gaussian likelihood.
 
-- `Before GNSS`: raw GNSS measurement vs GT
-- `Before IMU-only`: deterministic open-loop integration from GT initial pose
-- filter `imu_only`: prediction only, with each filter's initialization and process noise
+| Scenario | Case | Mode / Source | RMSE (position) | Runtime (filter only) | Note |
+| --- | --- | --- | ---: | ---: | --- |
+| Clean | Before GNSS | `--source gnss` | `0.0705` | - | raw GNSS vs GT |
+| Clean | Before IMU-only | `--source imu` | `0.1731` | - | deterministic open-loop |
+| Clean | EKF | `imu_only` | `0.2573` | - | prediction only |
+| Clean | InEKF | `imu_only` | `0.1750` | - | prediction only |
+| Clean | PF | `imu_only` | `3.2280` | - | no measurement reweighting |
+| Clean | UKF | `imu_only` | `12.1211` | - | prediction only |
+| Clean | PF | `fused` | `0.0252` | `0.118 sec` | 6000 particles |
+| Clean | EKF | `fused` | `0.0245` | `0.025 sec` | IMU + GNSS |
+| Clean | InEKF | `fused` | `0.0245` | `0.027 sec` | IMU + GNSS |
+| Clean | UKF | `fused` | `0.0451` | `0.105 sec` | IMU + GNSS |
+| GNSS outlier | PF | `fused` | `0.1712` | `0.123 sec` | 3000 particles, Gaussian likelihood |
+| GNSS outlier | EKF | `fused` | `0.2502` | `0.025 sec` | Gaussian update |
+| GNSS outlier | InEKF | `fused` | `0.2502` | `0.027 sec` | Gaussian update |
+| GNSS outlier | UKF | `fused` | `0.2526` | `0.104 sec` | Gaussian update |
 
-Synthetic `synthetic_test`, `2d`, `500` steps:
-
-| Case | Mode / Source | RMSE (position) | Note |
-| --- | --- | ---: | --- |
-| Before GNSS | `--source gnss` | `0.0705` | raw measurement vs GT |
-| Before IMU-only | `--source imu` | `0.1731` | deterministic control integration |
-| EKF | `imu_only` | `0.2573` | prediction only |
-| InEKF | `imu_only` | `0.1750` | prediction only |
-| PF | `imu_only` | `3.2280` | particle propagation without measurement correction |
-| UKF | `imu_only` | `12.1211` | prediction only |
-
-PF can look worse in `imu_only` because no measurement update is available to reweight particles.
-With nonzero initial covariance and process noise, particles spread over time and the estimate is only the weighted particle mean.
-For PF, the meaningful filtering case is usually `fused`: IMU prediction followed by GNSS measurement update.
-
-The same `synthetic_test`, `2d`, `500` step setup in `fused` mode gives the following filter results.
-PF used `6000` particles in this run.
-
-| Filter | Mode | RMSE (position) | Runtime (filter only) | Note |
-| --- | --- | ---: | ---: | --- |
-| PF | `fused` | `0.0252` | `0.118 sec` | IMU prediction + GNSS update |
-| EKF | `fused` | `0.0245` | `0.025 sec` | IMU prediction + GNSS update |
-| InEKF | `fused` | `0.0245` | `0.027 sec` | IMU prediction + GNSS update |
-| UKF | `fused` | `0.0451` | `0.105 sec` | IMU prediction + GNSS update |
-
-Compared with raw GNSS (`0.0705`) and deterministic IMU-only (`0.1731`), the fused runs show the expected correction effect.
-PF, EKF, and InEKF are close on this synthetic case, while UKF is still improved over raw GNSS but less tight under the current config.
-
-## Robust GNSS Outlier Experiment
-
-This experiment is designed to show when PF can be more useful than Gaussian filters.
-The clean synthetic setup uses direct position GNSS with Gaussian noise, so EKF/InEKF can already perform very well.
-To stress the filters, the GNSS generator can inject occasional large outliers.
-
-Current outlier dataset settings:
-
-```yaml
-gnss_noise_model: outlier_mixture
-gnss_outlier_prob: 0.1
-gnss_outlier_std: [2.0, 2.0, 2.0]
-```
-
-Current PF setting for this run:
-
-```yaml
-num_particles: 3000
-measurement_model:
-  likelihood_model: gaussian
-```
-
-Measured `synthetic_test`, `2d`, `500` step outlier run:
-
-| Filter | Mode | RMSE (position) | Runtime (filter only) | Note |
-| --- | --- | ---: | ---: | --- |
-| PF | `fused` | `0.1712` | `0.123 sec` | 3000 particles, Gaussian likelihood |
-| EKF | `fused` | `0.2502` | `0.025 sec` | Gaussian update |
-| InEKF | `fused` | `0.2502` | `0.027 sec` | Gaussian update |
-| UKF | `fused` | `0.2526` | `0.104 sec` | Gaussian update |
-
-Under the outlier mixture, PF degrades less than EKF/UKF/InEKF even before enabling the robust mixture likelihood.
-The next comparison is to switch PF to `likelihood_model: gaussian_mixture` and check whether the outlier degradation decreases further.
-
-PF-side robust likelihood options for the next run:
-
-```yaml
-measurement_model:
-  likelihood_model: gaussian_mixture
-  outlier_weight: 0.05
-  outlier_noise_diag: [4.0, 4.0]
-```
-
-The intended comparison is:
-
-| Scenario | Dataset noise | PF likelihood | Expected behavior |
-| --- | --- | --- | --- |
-| Clean | Gaussian GNSS | Gaussian | EKF/InEKF/PF can be similar |
-| Outlier | GNSS outlier mixture | Gaussian | filters are pulled by bad measurements |
-| Robust outlier | GNSS outlier mixture | Gaussian mixture | PF should degrade less if particles cover the true state |
-
-The outlier-only case is not the full robust PF experiment: PF also needs a likelihood model that admits the possibility of bad GNSS samples.
-Otherwise it can still trust outliers as ordinary Gaussian measurements.
+Key takeaways: clean fused runs are much better than raw GNSS or IMU-only baselines; `imu_only` PF can perform poorly because no measurement update exists to reweight particles; under GNSS outliers, PF degrades less than EKF/UKF/InEKF in the current run.
+The next PF check is to switch to `likelihood_model: gaussian_mixture` and compare the robust outlier result.
 
 ## Single-Dataset Benchmark Comparison
 
