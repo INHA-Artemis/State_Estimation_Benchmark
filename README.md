@@ -221,6 +221,30 @@ Common mode options:
 - `gnss_only`: measurement update only
 - `fused`: prediction + measurement update
 
+## Before/IMU-Only Comparison
+
+For input-only checks, `examples/plot_dataset_before.py` compares raw inputs against GT before any filter correction.
+This is different from running a filter in `imu_only` mode.
+
+- `Before GNSS`: raw GNSS measurement vs GT
+- `Before IMU-only`: deterministic open-loop integration from GT initial pose
+- filter `imu_only`: prediction only, with each filter's initialization and process noise
+
+Synthetic `synthetic_test`, `2d`, `500` steps:
+
+| Case | Mode / Source | RMSE (position) | Note |
+| --- | --- | ---: | --- |
+| Before GNSS | `--source gnss` | `0.0705` | raw measurement vs GT |
+| Before IMU-only | `--source imu` | `0.1731` | deterministic control integration |
+| EKF | `imu_only` | `0.2573` | prediction only |
+| InEKF | `imu_only` | `0.1750` | prediction only |
+| PF | `imu_only` | `3.2280` | particle propagation without measurement correction |
+| UKF | `imu_only` | `12.1211` | prediction only |
+
+PF can look worse in `imu_only` because no measurement update is available to reweight particles.
+With nonzero initial covariance and process noise, particles spread over time and the estimate is only the weighted particle mean.
+For PF, the meaningful filtering case is usually `fused`: IMU prediction followed by GNSS measurement update.
+
 ## Single-Dataset Benchmark Comparison
 
 ### Synthetic: `synthetic_test`
