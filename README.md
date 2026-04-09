@@ -124,65 +124,61 @@ Latest repeated-trial setup:
 
 ### At A Glance
 
-- Accuracy winner on clean Gaussian GNSS: `PF pf_3000_gmm` with RMSE `0.0218`
-- Accuracy winner on outlier GNSS: `PF pf_3000_gmm` with RMSE `0.1116`
+- Accuracy winner on clean Gaussian GNSS: `PF pf_3000_gmm_w005_n4` with RMSE `0.0218`
+- Accuracy winner on outlier GNSS: `PF pf_3000_gmm_w020_n16` with RMSE `0.0901`
 - Speed winner in the current sweep: `EKF` at about `0.025 sec` per run
-- Minimal tuning effect: `UKF alpha` change from `0.3` to `0.7` is negligible here
+- Strongest non-PF baseline: `EKF default_config_noise` with RMSE `0.0229 / 0.2976`
 
 ### Compact Comparison
 
 | What to compare | Best setting | Key number | Why it matters |
 | --- | --- | ---: | --- |
-| Clean-data accuracy | `PF pf_3000_gmm` | `0.0218 RMSE` | best result on Gaussian GNSS |
-| Outlier robustness | `PF pf_3000_gmm` | `0.1116 RMSE` | strongest robustness in this sweep |
+| Clean-data accuracy | `PF pf_3000_gmm_w005_n4` | `0.0218 RMSE` | best result on Gaussian GNSS |
+| Outlier robustness | `PF pf_3000_gmm_w020_n16` | `0.0901 RMSE` | best result under outlier GNSS |
 | Fastest runtime | `EKF default/low_process_noise` | `0.025 sec` | slightly faster than InEKF on the same 2D sweep |
-| Low-impact tuning | `UKF default vs high_alpha` | `0.0402 / 0.0402` | sigma-point alpha had no practical effect |
+| Best non-PF accuracy | `EKF default_config_noise` | `0.0229 / 0.2976` | strongest EKF-family result in this sweep |
 
 ### Visual Readout
 
 ```text
 Gaussian RMSE (lower is better)
-PF 3000 GMM        0.0218  ████
-PF 1000 Gaussian   0.0262  █████
+PF gmm w005 n4     0.0218  ████
+EKF cfg noise      0.0229  ████
+PF 1000 gaussian   0.0262  █████
 EKF low Q          0.0344  ███████
 InEKF low Q        0.0344  ███████
-EKF default        0.0398  ████████
+UKF low Q          0.0348  ███████
 InEKF default      0.0398  ████████
-UKF default        0.0402  ████████
-UKF high alpha     0.0402  ████████
+UKF default sigma  0.0402  ████████
 ```
 
 ```text
 Outlier RMSE (lower is better)
-PF 3000 GMM        0.1116  ███
-PF 1000 Gaussian   0.2033  █████
-EKF low Q          0.4495  ███████████
-InEKF low Q        0.4495  ███████████
-UKF high alpha     0.5171  █████████████
-UKF default        0.5171  █████████████
-InEKF default      0.5172  █████████████
-EKF default        0.5172  █████████████
+PF gmm w020 n16    0.0901  ███
+PF gmm w010 n9     0.0978  ███
+PF 1000 gaussian   0.2033  ██████
+EKF cfg noise      0.2976  █████████
+UKF cfg noise      0.2988  █████████
+EKF low Q          0.4495  █████████████
+InEKF low Q        0.4495  █████████████
+UKF default sigma  0.5171  ███████████████
 ```
 
 ```text
 Runtime per run (lower is better)
-EKF low Q          0.025s  ███
-EKF default        0.025s  ███
-InEKF low Q        0.026s  ███
-InEKF default      0.027s  ███
-PF 1000 Gaussian   0.056s  ██████
-UKF default        0.101s  ███████████
-UKF high alpha     0.101s  ███████████
-PF 3000 GMM        0.137s  ██████████████
+EKF                0.025s  ███
+InEKF              0.027s  ███
+PF 1000 gaussian   0.056s  ██████
+UKF                0.101s  ███████████
+PF 3000 GMM        0.136s  ██████████████
 ```
 
 ### Readout
 
-- PF still gives the best accuracy among the tested per-filter settings on both clean Gaussian and outlier-mixed synthetic data.
-- The strongest PF setting in this sweep is `pf_3000_gmm`; compared with `pf_1000_gaussian`, it improves RMSE from `0.0262` to `0.0218` on Gaussian data and from `0.2033` to `0.1116` on outlier data, with about `2.4x` to `2.5x` runtime cost.
-- EKF and InEKF now show essentially the same accuracy pattern in this 2D synthetic sweep. Lowering process noise improves both from `0.0398` to `0.0344` on Gaussian data and from about `0.5172` to `0.4495` on outlier data.
-- EKF is the fastest family in the current per-filter sweep at about `0.025 sec` per run, with InEKF close behind at about `0.026` to `0.027 sec`.
-- UKF remains the most outlier-sensitive configuration here, and changing `alpha` does not materially change the result.
+- PF remains the most accurate family in both scenarios. On Gaussian data, the best case is `pf_3000_gmm_w005_n4` at `0.0218`; on outlier data, the best case is `pf_3000_gmm_w020_n16` at `0.0901`.
+- PF tuning matters mainly in the outlier setting. Moving from `pf_1000_gaussian` to the best GMM setting improves RMSE from `0.2033` to `0.0901`, with runtime increasing from about `0.056 sec` to `0.136 sec`.
+- Among Gaussian-style filters, `ekf_default_config_noise` is the strongest baseline at `0.0229` on Gaussian data and `0.2976` on outlier data. `ukf_default_config_noise` is very similar at `0.0415 / 0.2988`, while the dataset-noise/default-sigma UKF cases stay much more outlier-sensitive.
+- EKF is still the fastest family in this sweep at about `0.025 sec` per run, with InEKF close behind at about `0.027 sec`.
 
 ## Additional Benchmark Results
 
