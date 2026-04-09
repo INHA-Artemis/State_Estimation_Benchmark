@@ -81,74 +81,7 @@ To inspect raw inputs before filtering:
 python3 examples/plot_dataset_before.py --source both
 ```
 
-## Configuration
-
-### Dataset Config
-
-The shared dataset configuration is `config/dataset_config.yaml`.
-Key fields are `dataset_type`, `dataset_name`, `pose_type`, `mode`, and `generated_csv_path`.
-The runtime modes are `imu_only` for prediction only, `gnss_only` for measurement update only, and `fused` for prediction plus measurement update.
-
-Dataset-specific sections and reference links:
-- EuRoC / Newer College style reference: https://ori.ox.ac.uk/datasets/newer-college-dataset
-- ROS bag datasets:
-  - KAIST-VIO (IMU): https://github.com/url-kaist/kaistviodataset?tab=readme-ov-file#Dataset-format
-  - InCrowd-VI (IMU): https://vault.cloudlab.zhaw.ch/vaults/InCrowd-VI/data/
-  - GVINS (IMU, GNSS): https://github.com/HKUST-Aerial-Robotics/GVINS-Dataset
-  - M2DGR (IMU, GNSS): https://github.com/SJTU-ViSYS/M2DGR?tab=readme-ov-file#dataset-sequences
-- synthetic generation from repository Python utilities
-
-### Filter Configs
-
-Filter configs live under `config/` and share the same broad sections: `initialization`, `motion_model`, `measurement_model`, `evaluation`, `visualization`, and `output`.
-Filter-specific options, such as UKF `sigma_points` or PF particle/resampling settings, stay inside the matching filter config.
-
-## Dataset Examples
-
-Select a dataset by editing `config/dataset_config.yaml`.
-
-Synthetic example:
-
-```yaml
-dataset_type: synthetic
-dataset_name: synthetic
-pose_type: 2d
-mode: fused
-sequence_length: 300
-dt: 0.1
-seed: 10
-```
-
-External dataset examples:
-
-```yaml
-# EuRoC
-dataset_type: euroc
-euroc_imu_csv: /path/to/euroc/mav0/imu0/data.csv
-euroc_gt_csv: /path/to/euroc/mav0/state_groundtruth_estimate0/data.csv
-```
-
-```yaml
-# ROS bag
-dataset_type: rosbag
-rosbag_path: /path/to/your_rosbag
-rosbag_imu_topic: /mavros/imu/data
-rosbag_gt_topic: /pose_transformed
-```
-
-```yaml
-# M2DGR
-dataset_type: m2dgr
-m2dgr_bag_path: /m2dgr_dataset/M2DGR/street_01.bag
-m2dgr_gt_txt_path: /m2dgr_dataset/M2DGR/street_01.txt
-m2dgr_imu_topic: /handsfree/imu
-m2dgr_gnss_topic: /ublox/fix
-```
-
-Common mode options:
-- `imu_only`: prediction only
-- `gnss_only`: measurement update only
-- `fused`: prediction + measurement update
+Dataset setup examples and dataset-specific notes were moved to [datasets/README.md](/workspace/State_Estimation_Benchmark/datasets/README.md).
 
 ## Synthetic Comparison Summary
 
@@ -193,7 +126,7 @@ Latest repeated-trial setup:
 
 - Accuracy winner on clean Gaussian GNSS: `PF pf_3000_gmm` with RMSE `0.0218`
 - Accuracy winner on outlier GNSS: `PF pf_3000_gmm` with RMSE `0.1116`
-- Speed winner in the current sweep: `InEKF` at about `0.027 sec` per run
+- Speed winner in the current sweep: `EKF` at about `0.025 sec` per run
 - Minimal tuning effect: `UKF alpha` change from `0.3` to `0.7` is negligible here
 
 ### Compact Comparison
@@ -202,7 +135,7 @@ Latest repeated-trial setup:
 | --- | --- | ---: | --- |
 | Clean-data accuracy | `PF pf_3000_gmm` | `0.0218 RMSE` | best result on Gaussian GNSS |
 | Outlier robustness | `PF pf_3000_gmm` | `0.1116 RMSE` | strongest robustness in this sweep |
-| Fastest runtime | `InEKF default/low_process_noise` | `0.027 sec` | about `4x` to `5x` faster than PF `3000_gmm` |
+| Fastest runtime | `EKF default/low_process_noise` | `0.025 sec` | slightly faster than InEKF on the same 2D sweep |
 | Low-impact tuning | `UKF default vs high_alpha` | `0.0402 / 0.0402` | sigma-point alpha had no practical effect |
 
 ### Visual Readout
@@ -211,7 +144,9 @@ Latest repeated-trial setup:
 Gaussian RMSE (lower is better)
 PF 3000 GMM        0.0218  ████
 PF 1000 Gaussian   0.0262  █████
+EKF low Q          0.0344  ███████
 InEKF low Q        0.0344  ███████
+EKF default        0.0398  ████████
 InEKF default      0.0398  ████████
 UKF default        0.0402  ████████
 UKF high alpha     0.0402  ████████
@@ -221,57 +156,33 @@ UKF high alpha     0.0402  ████████
 Outlier RMSE (lower is better)
 PF 3000 GMM        0.1116  ███
 PF 1000 Gaussian   0.2033  █████
+EKF low Q          0.4495  ███████████
 InEKF low Q        0.4495  ███████████
 UKF high alpha     0.5171  █████████████
 UKF default        0.5171  █████████████
 InEKF default      0.5172  █████████████
+EKF default        0.5172  █████████████
 ```
 
 ```text
 Runtime per run (lower is better)
+EKF low Q          0.025s  ███
+EKF default        0.025s  ███
+InEKF low Q        0.026s  ███
 InEKF default      0.027s  ███
-InEKF low Q        0.027s  ███
 PF 1000 Gaussian   0.056s  ██████
-UKF default        0.103s  ███████████
-UKF high alpha     0.103s  ███████████
-PF 3000 GMM        0.136s  ██████████████
-```
-
-```text
-Tuning impact snapshots
-InEKF Gaussian     0.0398 -> 0.0344  improvement
-InEKF Outlier      0.5172 -> 0.4495  improvement
-UKF Gaussian       0.0402 -> 0.0402  no visible change
-UKF Outlier        0.5171 -> 0.5171  no visible change
+UKF default        0.101s  ███████████
+UKF high alpha     0.101s  ███████████
+PF 3000 GMM        0.137s  ██████████████
 ```
 
 ### Readout
 
-- PF currently gives the best accuracy among the tested per-filter settings on both clean Gaussian and outlier-mixed synthetic data.
-- The strongest PF setting in this sweep is `pf_3000_gmm`; compared with `pf_1000_gaussian`, it improves RMSE from `0.0262` to `0.0218` on Gaussian data and from `0.2033` to `0.1116` on outlier data, with about `2.5x` runtime cost.
-- InEKF is the fastest family in the current sweep at about `0.027 sec` per run. Lowering process noise helps, especially on the outlier dataset, but it still trails PF in robustness.
-- UKF and InEKF show similar failure patterns on the outlier dataset, which is consistent with both relying on Gaussian measurement updates in the current setup.
-
-## Current Process Update
-
-Current benchmark workflow in the repository:
-1. Establish raw-input baselines and fused-filter comparisons on synthetic data.
-2. Add scenario splits such as clean Gaussian GNSS and outlier-mixture GNSS.
-3. Run repeated per-filter sweeps with controlled config overrides and changing dataset seeds.
-4. Save per-trial CSVs plus aggregated summaries for reproducible comparison.
-5. Use the summary tables to decide which filter parameters deserve promotion into default configs or follow-up experiments.
-
-Progress so far:
-- Baseline synthetic comparison across EKF, UKF, InEKF, and PF is documented above.
-- Repeated per-filter benchmarks have been completed for `PF`, `UKF`, and `InEKF`.
-- PF robustness under non-Gaussian GNSS noise is now supported by repeated-trial evidence, not just a single run.
-- UKF sigma-point tuning and InEKF process-noise tuning both have benchmark records, making it easier to distinguish meaningful gains from noise.
-- The current per-filter sweep does not yet include an updated EKF tuning table in this README section.
-
-Recommended next process steps:
-- Add an `ekf_cases` sweep to complete the same repeated-trial comparison set for all four filter families.
-- Promote the strongest validated settings into the default filter configs only after verifying they also generalize to longer synthetic runs or real datasets.
-- Extend the benchmark to `3d` and real sequences such as EuRoC or M2DGR so the conclusions are not limited to the current `2d` synthetic setup.
+- PF still gives the best accuracy among the tested per-filter settings on both clean Gaussian and outlier-mixed synthetic data.
+- The strongest PF setting in this sweep is `pf_3000_gmm`; compared with `pf_1000_gaussian`, it improves RMSE from `0.0262` to `0.0218` on Gaussian data and from `0.2033` to `0.1116` on outlier data, with about `2.4x` to `2.5x` runtime cost.
+- EKF and InEKF now show essentially the same accuracy pattern in this 2D synthetic sweep. Lowering process noise improves both from `0.0398` to `0.0344` on Gaussian data and from about `0.5172` to `0.4495` on outlier data.
+- EKF is the fastest family in the current per-filter sweep at about `0.025 sec` per run, with InEKF close behind at about `0.026` to `0.027 sec`.
+- UKF remains the most outlier-sensitive configuration here, and changing `alpha` does not materially change the result.
 
 ## Additional Benchmark Results
 
@@ -280,27 +191,19 @@ They use different dataset lengths/configs from the `Synthetic Comparison Summar
 
 ### Synthetic: `synthetic_test`
 
-This synthetic run used `3000` steps.
-PF entries are reported separately by particle count because PF performance depends strongly on the number of particles.
+This repeated benchmark used `synthetic_test`, `3d`, `fused`, `500` steps, and `100` trials.
+The table below reflects the latest `benchmarks/run_filter_benchmark.py` summary.
 
-| Filter | RMSE (position) | Runtime (filter only) | Status |
-| --- | ---: | ---: | --- |
-| EKF | `0.0225` | `0.166 sec` | measured |
-| UKF | `0.0253` | `1.227 sec` | measured |
-| InEKF | `0.0236` | `0.233 sec` | measured |
+| Filter | Case | Mean RMSE (position) | Std RMSE | Mean Runtime (filter only) | Status |
+| --- | --- | ---: | ---: | ---: | --- |
+| PF | `gaussian_mixture_default` | `0.0850` | `0.0143` | `0.204 sec` | measured |
+| PF | `gaussian_baseline` | `0.1789` | `0.0282` | `0.188 sec` | measured |
+| EKF | `ekf_low_process_noise` | `0.2562` | `0.0302` | `0.028 sec` | measured |
+| EKF | `ekf_default` | `0.2992` | `0.0336` | `0.028 sec` | measured |
+| UKF | `default_sigma_points` | `0.3095` | `0.0352` | `0.205 sec` | measured |
+| InEKF | `velocity_gravity_default` | `0.3123` | `0.0328` | `0.040 sec` | measured |
 
-PF particle-count sweep:
-
-| PF Particles | RMSE (position) | Runtime (filter only) | Status |
-| ---: | ---: | ---: | --- |
-| `3000` | `0.0146` | `1.117 sec` | measured |
-| `1000` | `0.0177` | `0.484 sec` | measured |
-| `500` | `0.0233` | `0.325 sec` | measured |
-| `200` | `0.0325` | `0.229 sec` | measured |
-| `100` | `0.0411` | `0.192 sec` | measured |
-| `10` | `0.1400` | `0.161 sec` | measured |
-
-Note: the current default PF config may use a different `num_particles` value than the best PF result shown above. Check `config/pf.yaml` before reproducing a specific benchmark row.
+Current takeaway: on this 3D synthetic repeated benchmark, `PF gaussian_mixture_default` is the most accurate setting, while `EKF` gives the fastest runtime among the tested filters.
 
 ### M2DGR: `street_01`
 
@@ -321,11 +224,6 @@ Note: the current default PF config may use a different `num_particles` value th
 | InEKF | `TBD` | `TBD` | not recorded yet |
 
 These tables compare filters on a fixed dataset for each benchmark sequence.
-
-## Filter Behavior Notes
-
-The implementations are benchmark-oriented and share the repository's `2d`/`6d` state conventions, dataset loaders, CSV conversion flow, and output style.
-EKF/InEKF can be very competitive on clean Gaussian position measurements, while PF is more informative under non-Gaussian or outlier-heavy measurement conditions.
 
 ## Docker Usage
 

@@ -41,6 +41,7 @@ def main() -> None:
     dataset_seed_start = int(benchmark_cfg.get("dataset_seed_start", 10))
     sync_pf_seed = bool(benchmark_cfg.get("sync_pf_seed_with_dataset_seed", True))
 
+    ekf_cases = list(benchmark_cfg.get("ekf_cases", []))
     pf_cases = list(benchmark_cfg.get("pf_cases", []))
     ukf_cases = list(benchmark_cfg.get("ukf_cases", []))
     inekf_cases = list(benchmark_cfg.get("inekf_cases", []))
@@ -70,36 +71,43 @@ def main() -> None:
                 f"[Benchmark] Seed range       : start={dataset_seed_start} end={dataset_seed_start + num_trials - 1}"
             )
 
-        ekf_cfg = load_yaml(ekf_config_path)
-        normalize_position_filter_config_for_pose(ekf_cfg, pose_type)
-        align_initialization_with_ground_truth(ekf_cfg, gt, pose_type, mode)
-        ekf_result = _run_filter("ekf", "default", dataset_cfg, ekf_cfg, dataset, gt, pose_type)
-        raw_rows.append(_build_raw_row(trial, dataset_seed, dataset_name, csv_path, sequence_length, mode, pose_type, ekf_result))
+        if ekf_cases:
+            ekf_case_list = ekf_cases
+        else:
+            ekf_case_list = [{"name": "default"}]
+
+        for case in ekf_case_list:
+            ekf_cfg = load_yaml(ekf_config_path)
+            _deep_update(ekf_cfg, _case_overrides(case))
+            normalize_position_filter_config_for_pose(ekf_cfg, pose_type)
+            align_initialization_with_ground_truth(ekf_cfg, gt, pose_type, mode)
+            ekf_result = _run_filter("ekf", _case_name(case), dataset_cfg, ekf_cfg, dataset, gt, pose_type)
+            raw_rows.append(_build_raw_row(trial, dataset_seed, dataset_name, csv_path, sequence_length, mode, pose_type, ekf_result))
 
         for case in pf_cases:
             pf_cfg = load_yaml(pf_config_path)
-            _deep_update(pf_cfg, case)
+            _deep_update(pf_cfg, _case_overrides(case))
             _normalize_pf_config_for_pose(pf_cfg, pose_type)
             if sync_pf_seed:
                 pf_cfg["seed"] = dataset_seed
             align_initialization_with_ground_truth(pf_cfg, gt, pose_type, mode)
-            pf_result = _run_filter("pf", case["name"], dataset_cfg, pf_cfg, dataset, gt, pose_type)
+            pf_result = _run_filter("pf", _case_name(case), dataset_cfg, pf_cfg, dataset, gt, pose_type)
             raw_rows.append(_build_raw_row(trial, dataset_seed, dataset_name, csv_path, sequence_length, mode, pose_type, pf_result))
 
         for case in ukf_cases:
             ukf_cfg = load_yaml(ukf_config_path)
-            _deep_update(ukf_cfg, case)
+            _deep_update(ukf_cfg, _case_overrides(case))
             normalize_position_filter_config_for_pose(ukf_cfg, pose_type)
             align_initialization_with_ground_truth(ukf_cfg, gt, pose_type, mode)
-            ukf_result = _run_filter("ukf", case["name"], dataset_cfg, ukf_cfg, dataset, gt, pose_type)
+            ukf_result = _run_filter("ukf", _case_name(case), dataset_cfg, ukf_cfg, dataset, gt, pose_type)
             raw_rows.append(_build_raw_row(trial, dataset_seed, dataset_name, csv_path, sequence_length, mode, pose_type, ukf_result))
 
         for case in inekf_cases:
             inekf_cfg = load_yaml(inekf_config_path)
-            _deep_update(inekf_cfg, case)
+            _deep_update(inekf_cfg, _case_overrides(case))
             _normalize_inekf_config_for_pose(inekf_cfg, pose_type)
             align_initialization_with_ground_truth(inekf_cfg, gt, pose_type, mode)
-            inekf_result = _run_filter("inekf", case["name"], dataset_cfg, inekf_cfg, dataset, gt, pose_type)
+            inekf_result = _run_filter("inekf", _case_name(case), dataset_cfg, inekf_cfg, dataset, gt, pose_type)
             raw_rows.append(_build_raw_row(trial, dataset_seed, dataset_name, csv_path, sequence_length, mode, pose_type, inekf_result))
 
     summary_rows.extend(_aggregate_rows(raw_rows))
@@ -235,6 +243,17 @@ def _deep_update(base: dict[str, Any], override: dict[str, Any]) -> dict[str, An
         else:
             base[key] = copy.deepcopy(value)
     return base
+
+
+def _case_name(case: dict[str, Any]) -> str:
+    return str(case.get("name", "unnamed_case"))
+
+
+def _case_overrides(case: dict[str, Any]) -> dict[str, Any]:
+    overrides = case.get("filter_overrides")
+    if isinstance(overrides, dict):
+        return overrides
+    return {key: copy.deepcopy(value) for key, value in case.items() if key != "name"}
 
 
 def _normalize_pf_config_for_pose(filter_cfg: dict[str, Any], pose_type: str) -> None:

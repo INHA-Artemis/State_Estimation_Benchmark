@@ -24,6 +24,8 @@ from utils.save_estimates import save_estimates_to_csv
 from utils.visualization import plot_position_error_norm, plot_results, save_trajectory_animation
 from utils.yaml_loader import load_yaml
 
+PER_FILTER_BENCHMARK_CONFIG_PATH = PROJECT_ROOT / "benchmarks" / "per_filter_benchmark.yaml"
+
 
 def main() -> None:
     total_start = time.perf_counter()
@@ -33,10 +35,22 @@ def main() -> None:
     parser.add_argument("--ekf-config", default=str(PROJECT_ROOT / "config" / "ekf.yaml"))
     parser.add_argument("--visualization-config", default=str(PROJECT_ROOT / "config" / "output_visualization.yaml"))
     parser.add_argument("--output-dir", default=str(PROJECT_ROOT / "outputs"))
+    parser.add_argument("--benchmark-config", default=str(PER_FILTER_BENCHMARK_CONFIG_PATH))
+    parser.add_argument("--benchmark-case", default=None, help="Apply an EKF benchmark case by name before running.")
     args = parser.parse_args()
 
     dataset_cfg = load_yaml(Path(args.dataset_config))
     ekf_cfg = load_yaml(Path(args.ekf_config))
+    if args.benchmark_case:
+        benchmark_cfg = load_yaml(Path(args.benchmark_config))
+        selected_case = _find_benchmark_case(benchmark_cfg, args.benchmark_case)
+        if selected_case is None:
+            raise ValueError(f"EKF benchmark case not found: {args.benchmark_case}")
+        _deep_update(dataset_cfg, _dataset_overrides(selected_case))
+        _deep_update(ekf_cfg, _case_overrides(selected_case))
+        print(f"[EKF] Benchmark case: {args.benchmark_case}")
+        print(f"[EKF] Benchmark config: {Path(args.benchmark_config)}")
+
     ekf_cfg["visualization"] = merge_visualization_config(
         load_visualization_config(args.visualization_config),
         ekf_cfg.get("visualization"),
@@ -110,6 +124,39 @@ def main() -> None:
 
     total_runtime = time.perf_counter() - total_start
     print(f"[EKF] Runtime (total): {total_runtime:.3f} sec")
+
+
+
+
+def _find_benchmark_case(benchmark_cfg: dict, case_name: str) -> dict | None:
+    candidates = list(benchmark_cfg.get("ekf_cases", [])) + list(benchmark_cfg.get("filter_cases", []))
+    for case in candidates:
+        if str(case.get("name", "")).strip() == case_name:
+            return case
+    return None
+
+
+def _case_overrides(case: dict) -> dict:
+    overrides = case.get("filter_overrides")
+    if isinstance(overrides, dict):
+        return overrides
+    return {key: value for key, value in case.items() if key not in {"name", "dataset_overrides", "enabled", "filters", "filter"}}
+
+
+def _dataset_overrides(case: dict) -> dict:
+    dataset_overrides = case.get("dataset_overrides")
+    if isinstance(dataset_overrides, dict):
+        return dataset_overrides
+    return {}
+
+
+def _deep_update(base: dict, override: dict) -> dict:
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_update(base[key], value)
+        else:
+            base[key] = value
+    return base
 
 
 if __name__ == "__main__":
