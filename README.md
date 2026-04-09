@@ -189,30 +189,54 @@ Latest repeated-trial setup:
 - dataset seed range: `10..109`
 - output files: `*_per_filter_raw.csv`, `*_per_filter_summary.csv`
 
-### Latest Results
+### At A Glance
 
-| Filter | Dataset Case | Filter Case | Mean RMSE | Std RMSE | Mean Runtime | Interpretation |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| PF | `synthetic_2d_gaussian` | `pf_1000_gaussian` | `0.0262` | `0.0036` | `0.055 sec` | fast baseline PF |
-| PF | `synthetic_2d_gaussian` | `pf_3000_gmm` | `0.0218` | `0.0023` | `0.136 sec` | best PF accuracy on clean data |
-| PF | `synthetic_2d_outlier` | `pf_1000_gaussian` | `0.2033` | `0.0344` | `0.056 sec` | outliers hurt Gaussian likelihood |
-| PF | `synthetic_2d_outlier` | `pf_3000_gmm` | `0.1116` | `0.0154` | `0.136 sec` | clear robustness gain from GMM likelihood |
-| UKF | `synthetic_2d_gaussian` | `ukf_default` | `0.0402` | `0.0012` | `0.103 sec` | baseline UKF |
-| UKF | `synthetic_2d_gaussian` | `ukf_high_alpha` | `0.0402` | `0.0012` | `0.103 sec` | nearly identical to default |
-| UKF | `synthetic_2d_outlier` | `ukf_default` | `0.5171` | `0.0479` | `0.102 sec` | strongly affected by outliers |
-| UKF | `synthetic_2d_outlier` | `ukf_high_alpha` | `0.5171` | `0.0479` | `0.102 sec` | alpha change does not help here |
-| InEKF | `synthetic_2d_gaussian` | `inekf_default` | `0.0398` | `0.0011` | `0.027 sec` | fastest tested configuration |
-| InEKF | `synthetic_2d_gaussian` | `inekf_low_process_noise` | `0.0344` | `0.0012` | `0.027 sec` | lower process noise improves clean-data fit |
-| InEKF | `synthetic_2d_outlier` | `inekf_default` | `0.5172` | `0.0479` | `0.027 sec` | same outlier sensitivity pattern as UKF |
-| InEKF | `synthetic_2d_outlier` | `inekf_low_process_noise` | `0.4495` | `0.0422` | `0.027 sec` | some improvement, but still not robust |
+- Accuracy winner on clean Gaussian GNSS: `PF pf_3000_gmm` with RMSE `0.0218`
+- Accuracy winner on outlier GNSS: `PF pf_3000_gmm` with RMSE `0.1116`
+- Speed winner in the current sweep: `InEKF` at about `0.027 sec` per run
+- Minimal tuning effect: `UKF alpha` change from `0.3` to `0.7` is negligible here
+
+### Compact Comparison
+
+| What to compare | Best setting | Key number | Why it matters |
+| --- | --- | ---: | --- |
+| Clean-data accuracy | `PF pf_3000_gmm` | `0.0218 RMSE` | best result on Gaussian GNSS |
+| Outlier robustness | `PF pf_3000_gmm` | `0.1116 RMSE` | strongest robustness in this sweep |
+| Fastest runtime | `InEKF default/low_process_noise` | `0.027 sec` | about `4x` to `5x` faster than PF `3000_gmm` |
+| Low-impact tuning | `UKF default vs high_alpha` | `0.0402 / 0.0402` | sigma-point alpha had no practical effect |
+
+### Visual Readout
+
+```text
+Gaussian RMSE (lower is better)
+PF 3000 GMM        0.0218  ████
+PF 1000 Gaussian   0.0262  █████
+InEKF low Q        0.0344  ███████
+UKF default        0.0402  ████████
+```
+
+```text
+Outlier RMSE (lower is better)
+PF 3000 GMM        0.1116  ███
+PF 1000 Gaussian   0.2033  █████
+InEKF low Q        0.4495  ███████████
+UKF default        0.5171  █████████████
+```
+
+```text
+Runtime per run (lower is better)
+InEKF default      0.027s  ███
+PF 1000 Gaussian   0.056s  ██████
+UKF default        0.103s  ███████████
+PF 3000 GMM        0.136s  ██████████████
+```
 
 ### Readout
 
 - PF currently gives the best accuracy among the tested per-filter settings on both clean Gaussian and outlier-mixed synthetic data.
 - The strongest PF setting in this sweep is `pf_3000_gmm`; compared with `pf_1000_gaussian`, it improves RMSE from `0.0262` to `0.0218` on Gaussian data and from `0.2033` to `0.1116` on outlier data, with about `2.5x` runtime cost.
-- UKF sensitivity to `alpha` is negligible in this benchmark. `ukf_default` and `ukf_high_alpha` are effectively the same on both datasets.
 - InEKF is the fastest family in the current sweep at about `0.027 sec` per run. Lowering process noise helps, especially on the outlier dataset, but it still trails PF in robustness.
-- UKF and InEKF show very similar failure patterns on the outlier dataset, which is consistent with both relying on Gaussian measurement updates in the current setup.
+- UKF and InEKF show similar failure patterns on the outlier dataset, which is consistent with both relying on Gaussian measurement updates in the current setup.
 
 ## Current Process Update
 
