@@ -22,9 +22,11 @@ from utils.filter_config import normalize_position_filter_config_for_pose
 from utils.filter_initialization import align_initialization_with_ground_truth
 from utils.math_utils import compute_rmse
 from utils.prepare_dataset import prepare_dataset
+from utils.visualization import control_trajectory_from_dataset
 from utils.yaml_loader import load_yaml
 
 BENCHMARK_CONFIG_PATH = Path(__file__).resolve().with_name("benchmark_config.yaml")
+DEFAULT_OUTPUT_DIR = Path("outputs/benchmarks")
 
 
 def main() -> None:
@@ -35,82 +37,177 @@ def main() -> None:
     pf_config_path = _resolve_path("config/pf.yaml")
     ukf_config_path = _resolve_path("config/ukf.yaml")
     inekf_config_path = _resolve_path("config/inekf.yaml")
-    output_dir = _resolve_path("outputs/benchmarks")
+    output_dir = _resolve_path(benchmark_cfg.get("output_dir", str(DEFAULT_OUTPUT_DIR)))
 
     num_trials = int(benchmark_cfg.get("num_trials", 10))
     dataset_seed_start = int(benchmark_cfg.get("dataset_seed_start", 10))
     sync_pf_seed = bool(benchmark_cfg.get("sync_pf_seed_with_dataset_seed", True))
+    scenario_cases = list(benchmark_cfg.get("scenario_cases", []))
 
-    ekf_cases = list(benchmark_cfg.get("ekf_cases", []))
-    pf_cases = list(benchmark_cfg.get("pf_cases", []))
-    ukf_cases = list(benchmark_cfg.get("ukf_cases", []))
-    inekf_cases = list(benchmark_cfg.get("inekf_cases", []))
+    if not scenario_cases:
+        scenario_cases = [
+            {
+                "name": "default_fused",
+                "experiment": "experiment_1",
+                "dataset_overrides": {
+                    "mode": "fused",
+                    "gnss_noise_model": "gaussian",
+                },
+            }
+        ]
+
+    ekf_cases = _load_case_list(list(benchmark_cfg.get("ekf_cases", [])))
+    pf_cases = _load_case_list(list(benchmark_cfg.get("pf_cases", [])))
+    ukf_cases = _load_case_list(list(benchmark_cfg.get("ukf_cases", [])))
+    inekf_cases = _load_case_list(list(benchmark_cfg.get("inekf_cases", [])))
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
     raw_rows: list[dict[str, Any]] = []
-    summary_rows: list[dict[str, Any]] = []
+    total_trials = len(scenario_cases) * num_trials
 
-    for trial in tqdm(range(num_trials), desc="Benchmark trials", unit="trial"):
-        dataset_seed = dataset_seed_start + trial
-        dataset_cfg = load_yaml(dataset_config_path)
-        dataset_cfg["seed"] = dataset_seed
+    with tqdm(total=total_trials, desc="Benchmark trials", unit="trial") as pbar:
+        for scenario_case in scenario_cases:
+            scenario_name = str(scenario_case.get("name", "scenario_case"))
+            experiment_name = str(scenario_case.get("experiment", "unassigned"))
+            dataset_overrides = copy.deepcopy(scenario_case.get("dataset_overrides", {}))
 
-        pose_type, dataset_name, csv_path, dataset, gt, dt, _timestamps_ns = prepare_dataset(dataset_cfg)
-        sequence_length = len(dataset)
-        mode = str(dataset_cfg.get("mode", "fused"))
-        dataset_type = str(dataset_cfg.get("dataset_type", "synthetic"))
+            print(f"[Benchmark] Scenario        : {experiment_name}::{scenario_name}")
 
-        if trial == 0:
-            print(
-                "[Benchmark] Dataset setup    : "
-                f"type={dataset_type} name={dataset_name} mode={mode} pose_type={pose_type} steps={sequence_length}"
-            )
-            print(f"[Benchmark] Dataset CSV      : {csv_path}")
-            print(
-                f"[Benchmark] Seed range       : start={dataset_seed_start} end={dataset_seed_start + num_trials - 1}"
-            )
+            for trial in range(num_trials):
+                dataset_seed = dataset_seed_start + trial
+                dataset_cfg = load_yaml(dataset_config_path)
+                _deep_update(dataset_cfg, dataset_overrides)
+                dataset_cfg["seed"] = dataset_seed
+                dataset_cfg.setdefault("mode", "fused")
+                dataset_cfg["generated_csv_path"] = (
+                    output_dir
+                    / "datasets"
+                    / f"{_slugify(experiment_name)}_{_slugify(scenario_name)}_seed{dataset_seed}.csv"
+                )
 
-        if ekf_cases:
-            ekf_case_list = ekf_cases
-        else:
-            ekf_case_list = [{"name": "default"}]
+                pose_type, dataset_name, csv_path, dataset, gt, _dt, _timestamps_ns = prepare_dataset(dataset_cfg)
+                sequence_length = len(dataset)
+                mode = str(dataset_cfg.get("mode", "fused"))
+                dataset_type = str(dataset_cfg.get("dataset_type", "synthetic"))
 
-        for case in ekf_case_list:
-            ekf_cfg = load_yaml(ekf_config_path)
-            _deep_update(ekf_cfg, _case_overrides(case))
-            normalize_position_filter_config_for_pose(ekf_cfg, pose_type)
-            align_initialization_with_ground_truth(ekf_cfg, gt, pose_type, mode)
-            ekf_result = _run_filter("ekf", _case_name(case), dataset_cfg, ekf_cfg, dataset, gt, pose_type)
-            raw_rows.append(_build_raw_row(trial, dataset_seed, dataset_name, csv_path, sequence_length, mode, pose_type, ekf_result))
+                if trial == 0:
+                    print(
+                        "[Benchmark] Dataset setup    : "
+                        f"type={dataset_type} name={dataset_name} mode={mode} pose_type={pose_type} steps={sequence_length}"
+                    )
+                    print(f"[Benchmark] Dataset CSV      : {csv_path}")
+                    print(
+                        f"[Benchmark] Seed range       : start={dataset_seed_start} "
+                        f"end={dataset_seed_start + num_trials - 1}"
+                    )
 
-        for case in pf_cases:
-            pf_cfg = load_yaml(pf_config_path)
-            _deep_update(pf_cfg, _case_overrides(case))
-            _normalize_pf_config_for_pose(pf_cfg, pose_type)
-            if sync_pf_seed:
-                pf_cfg["seed"] = dataset_seed
-            align_initialization_with_ground_truth(pf_cfg, gt, pose_type, mode)
-            pf_result = _run_filter("pf", _case_name(case), dataset_cfg, pf_cfg, dataset, gt, pose_type)
-            raw_rows.append(_build_raw_row(trial, dataset_seed, dataset_name, csv_path, sequence_length, mode, pose_type, pf_result))
+                raw_rows.append(
+                    _build_raw_row(
+                        trial=trial,
+                        dataset_seed=dataset_seed,
+                        dataset_type=dataset_type,
+                        dataset_name=dataset_name,
+                        csv_path=csv_path,
+                        sequence_length=sequence_length,
+                        mode=mode,
+                        pose_type=pose_type,
+                        experiment_name=experiment_name,
+                        scenario_name=scenario_name,
+                        result=_run_imu_baseline(dataset, gt, pose_type),
+                    )
+                )
 
-        for case in ukf_cases:
-            ukf_cfg = load_yaml(ukf_config_path)
-            _deep_update(ukf_cfg, _case_overrides(case))
-            normalize_position_filter_config_for_pose(ukf_cfg, pose_type)
-            align_initialization_with_ground_truth(ukf_cfg, gt, pose_type, mode)
-            ukf_result = _run_filter("ukf", _case_name(case), dataset_cfg, ukf_cfg, dataset, gt, pose_type)
-            raw_rows.append(_build_raw_row(trial, dataset_seed, dataset_name, csv_path, sequence_length, mode, pose_type, ukf_result))
+                for case in ekf_cases:
+                    ekf_cfg = load_yaml(ekf_config_path)
+                    _deep_update(ekf_cfg, _case_overrides(case))
+                    normalize_position_filter_config_for_pose(ekf_cfg, pose_type)
+                    align_initialization_with_ground_truth(ekf_cfg, gt, pose_type, mode)
+                    raw_rows.append(
+                        _build_raw_row(
+                            trial=trial,
+                            dataset_seed=dataset_seed,
+                            dataset_type=dataset_type,
+                            dataset_name=dataset_name,
+                            csv_path=csv_path,
+                            sequence_length=sequence_length,
+                            mode=mode,
+                            pose_type=pose_type,
+                            experiment_name=experiment_name,
+                            scenario_name=scenario_name,
+                            result=_run_filter("ekf", _case_name(case), dataset_cfg, ekf_cfg, dataset, gt, pose_type),
+                        )
+                    )
 
-        for case in inekf_cases:
-            inekf_cfg = load_yaml(inekf_config_path)
-            _deep_update(inekf_cfg, _case_overrides(case))
-            _normalize_inekf_config_for_pose(inekf_cfg, pose_type)
-            align_initialization_with_ground_truth(inekf_cfg, gt, pose_type, mode)
-            inekf_result = _run_filter("inekf", _case_name(case), dataset_cfg, inekf_cfg, dataset, gt, pose_type)
-            raw_rows.append(_build_raw_row(trial, dataset_seed, dataset_name, csv_path, sequence_length, mode, pose_type, inekf_result))
+                for case in pf_cases:
+                    pf_cfg = load_yaml(pf_config_path)
+                    _deep_update(pf_cfg, _case_overrides(case))
+                    _normalize_pf_config_for_pose(pf_cfg, pose_type)
+                    if sync_pf_seed:
+                        pf_cfg["seed"] = dataset_seed
+                    align_initialization_with_ground_truth(pf_cfg, gt, pose_type, mode)
+                    raw_rows.append(
+                        _build_raw_row(
+                            trial=trial,
+                            dataset_seed=dataset_seed,
+                            dataset_type=dataset_type,
+                            dataset_name=dataset_name,
+                            csv_path=csv_path,
+                            sequence_length=sequence_length,
+                            mode=mode,
+                            pose_type=pose_type,
+                            experiment_name=experiment_name,
+                            scenario_name=scenario_name,
+                            result=_run_filter("pf", _case_name(case), dataset_cfg, pf_cfg, dataset, gt, pose_type),
+                        )
+                    )
 
-    summary_rows.extend(_aggregate_rows(raw_rows))
+                for case in ukf_cases:
+                    ukf_cfg = load_yaml(ukf_config_path)
+                    _deep_update(ukf_cfg, _case_overrides(case))
+                    normalize_position_filter_config_for_pose(ukf_cfg, pose_type)
+                    align_initialization_with_ground_truth(ukf_cfg, gt, pose_type, mode)
+                    raw_rows.append(
+                        _build_raw_row(
+                            trial=trial,
+                            dataset_seed=dataset_seed,
+                            dataset_type=dataset_type,
+                            dataset_name=dataset_name,
+                            csv_path=csv_path,
+                            sequence_length=sequence_length,
+                            mode=mode,
+                            pose_type=pose_type,
+                            experiment_name=experiment_name,
+                            scenario_name=scenario_name,
+                            result=_run_filter("ukf", _case_name(case), dataset_cfg, ukf_cfg, dataset, gt, pose_type),
+                        )
+                    )
+
+                for case in inekf_cases:
+                    inekf_cfg = load_yaml(inekf_config_path)
+                    _deep_update(inekf_cfg, _case_overrides(case))
+                    _normalize_inekf_config_for_pose(inekf_cfg, pose_type)
+                    align_initialization_with_ground_truth(inekf_cfg, gt, pose_type, mode)
+                    raw_rows.append(
+                        _build_raw_row(
+                            trial=trial,
+                            dataset_seed=dataset_seed,
+                            dataset_type=dataset_type,
+                            dataset_name=dataset_name,
+                            csv_path=csv_path,
+                            sequence_length=sequence_length,
+                            mode=mode,
+                            pose_type=pose_type,
+                            experiment_name=experiment_name,
+                            scenario_name=scenario_name,
+                            result=_run_filter("inekf", _case_name(case), dataset_cfg, inekf_cfg, dataset, gt, pose_type),
+                        )
+                    )
+
+                pbar.update(1)
+                pbar.set_postfix(experiment=experiment_name, scenario=scenario_name, refresh=False)
+
+    summary_rows = _aggregate_rows(raw_rows)
 
     raw_csv = output_dir / "filter_benchmark_raw.csv"
     summary_csv = output_dir / "filter_benchmark_summary.csv"
@@ -121,9 +218,9 @@ def main() -> None:
     print(f"[Benchmark] Raw results saved: {raw_csv}")
     print(f"[Benchmark] Summary saved    : {summary_csv}")
     for row in summary_rows:
-        label = f"{row['filter']}::{row['case']}"
+        label = f"{row['experiment']}::{row['scenario_case']}::{row['filter']}::{row['case']}"
         print(
-            f"[Benchmark] {label:<38} "
+            f"[Benchmark] {label:<72} "
             f"mean_rmse={row['rmse_mean']:>7.4f} "
             f"std_rmse={row['rmse_std']:>7.4f} "
             f"mean_runtime={row['runtime_mean']:>6.3f} sec "
@@ -173,19 +270,40 @@ def _run_filter(
     }
 
 
+def _run_imu_baseline(dataset: list[dict], gt: np.ndarray, pose_type: str) -> dict[str, Any]:
+    start = time.perf_counter()
+    estimates = control_trajectory_from_dataset(dataset, gt, pose_type)
+    runtime = time.perf_counter() - start
+    if estimates is None:
+        raise ValueError("IMU integration baseline could not be computed because raw_control is unavailable.")
+    rmse = compute_rmse(estimates, gt, pose_type=pose_type)
+    return {
+        "filter": "imu_integration",
+        "case": "raw_control_integration",
+        "rmse_position": float(rmse),
+        "runtime_sec": float(runtime),
+    }
+
+
 def _build_raw_row(
     trial: int,
     dataset_seed: int,
+    dataset_type: str,
     dataset_name: str,
     csv_path: Path,
     sequence_length: int,
     mode: str,
     pose_type: str,
+    experiment_name: str,
+    scenario_name: str,
     result: dict[str, Any],
 ) -> dict[str, Any]:
     row = {
+        "experiment": experiment_name,
+        "scenario_case": scenario_name,
         "trial": trial,
         "dataset_seed": dataset_seed,
+        "dataset_type": dataset_type,
         "dataset_name": dataset_name,
         "dataset_csv": str(csv_path),
         "sequence_length": sequence_length,
@@ -197,19 +315,32 @@ def _build_raw_row(
 
 
 def _aggregate_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    grouped: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
     for row in raw_rows:
-        key = (str(row["filter"]), str(row["case"]))
+        key = (
+            str(row["experiment"]),
+            str(row["scenario_case"]),
+            str(row["filter"]),
+            str(row["case"]),
+        )
         grouped.setdefault(key, []).append(row)
 
     summary_rows: list[dict[str, Any]] = []
-    for (filter_name, case_name), rows in sorted(grouped.items()):
+    for (experiment_name, scenario_name, filter_name, case_name), rows in sorted(grouped.items()):
         rmse = np.array([float(row["rmse_position"]) for row in rows], dtype=float)
         runtime = np.array([float(row["runtime_sec"]) for row in rows], dtype=float)
+        sample = rows[0]
         summary_rows.append(
             {
+                "experiment": experiment_name,
+                "scenario_case": scenario_name,
                 "filter": filter_name,
                 "case": case_name,
+                "dataset_type": sample["dataset_type"],
+                "dataset_name": sample["dataset_name"],
+                "pose_type": sample["pose_type"],
+                "mode": sample["mode"],
+                "sequence_length": sample["sequence_length"],
                 "num_trials": len(rows),
                 "rmse_mean": float(np.mean(rmse)),
                 "rmse_std": float(np.std(rmse)),
@@ -249,11 +380,23 @@ def _case_name(case: dict[str, Any]) -> str:
     return str(case.get("name", "unnamed_case"))
 
 
+def _load_case_list(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if cases:
+        return cases
+    return [{"name": "default"}]
+
+
 def _case_overrides(case: dict[str, Any]) -> dict[str, Any]:
     overrides = case.get("filter_overrides")
     if isinstance(overrides, dict):
         return overrides
     return {key: copy.deepcopy(value) for key, value in case.items() if key != "name"}
+
+
+def _slugify(value: str) -> str:
+    cleaned = "".join(ch.lower() if ch.isalnum() else "_" for ch in value.strip())
+    compact = "_".join(part for part in cleaned.split("_") if part)
+    return compact or "case"
 
 
 def _normalize_pf_config_for_pose(filter_cfg: dict[str, Any], pose_type: str) -> None:

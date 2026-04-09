@@ -33,7 +33,8 @@ m2dgr_use_gt_as_gnss: true
 # Sensor/noise settings.
 use_imu: true
 use_gnss: true
-imu_noise_std: [0.05, 0.02]
+imu_noise_std: [0.05, 0.02] # 2d: [speed, yaw_rate], 3d/6d: [linear, angular] or 6 axis values
+imu_bias_std: [0.0, 0.0] # fixed per-sequence bias; same shape rule as imu_noise_std
 gnss_noise_std: [0.05, 0.05, 0.05]
 gnss_noise_model: outlier_mixture # options: gaussian, outlier_mixture
 gnss_outlier_prob: 0.1

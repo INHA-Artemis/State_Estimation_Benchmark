@@ -201,6 +201,19 @@ The table below reflects the latest `benchmarks/run_filter_benchmark.py` summary
 
 Current takeaway: on this 3D synthetic repeated benchmark, `PF gaussian_mixture_default` is the most accurate setting, while `EKF` gives the fastest runtime among the tested filters.
 
+A separate single-run PF sweep on `examples/run_pf.py` with the same `synthetic_test` dataset showed a clear speed/accuracy trade-off across particle counts:
+
+| PF setting | RMSE (position) | Runtime (filter only) | Notes |
+| --- | ---: | ---: | --- |
+| `50` particles | `0.2528` | `0.033 sec` | fastest tested PF setting, but lowest accuracy in the sweep |
+| `500` particles | `0.2504` | `0.059 sec` | modest runtime increase, little RMSE gain over `50` |
+| `1000` particles | `0.2402` | `0.087 sec` | good practical baseline for speed-conscious runs |
+| `3000` particles | `0.2398` | `0.195 sec` | slightly best RMSE among the completed Gaussian PF runs |
+| `3000` particles + GMM likelihood | `0.2489` | `0.221 sec` | more expensive here, without a gain on this single run |
+| `50000` particles | `0.2400` | `2.767 sec` | essentially no RMSE gain over `3000`, but a very large runtime cost |
+
+PF sweep takeaway: on this synthetic setup, increasing particles beyond about `1000` to `3000` gives only a small RMSE improvement, while very large particle counts mainly increase runtime. In the reported single run, `3000` particles was the best completed accuracy point, and `1000` particles looked like the best speed/accuracy compromise.
+
 ### M2DGR: `street_01`
 
 | Filter | RMSE (position) | Runtime (filter only) | Status |

@@ -2,7 +2,7 @@
 filter:
   name: pf
 
-num_particles: 3000
+num_particles: 50000
 resample_threshold_ratio: 0.5
 seed: 7
 

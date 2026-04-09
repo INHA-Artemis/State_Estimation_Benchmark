@@ -1,4 +1,4 @@
-filter: inekf
+filter: pf
 num_trials: 100
 dataset_seed_start: 10
 sync_filter_seed_with_dataset_seed: true

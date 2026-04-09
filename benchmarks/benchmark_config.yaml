@@ -1,24 +1,70 @@
 num_trials: 100
 dataset_seed_start: 2
 sync_pf_seed_with_dataset_seed: true
+output_dir: outputs/benchmarks
+
+scenario_cases:
+  - name: gnss_nominal
+    experiment: experiment_1
+    dataset_overrides:
+      mode: fused
+      gnss_noise_model: gaussian
+      gnss_noise_std: [0.05, 0.05, 0.05]
+
+  - name: gnss_outlier_low
+    experiment: experiment_2
+    dataset_overrides:
+      mode: fused
+      gnss_noise_model: outlier_mixture
+      gnss_noise_std: [0.05, 0.05, 0.05]
+      gnss_outlier_prob: 0.02
+      gnss_outlier_std: [0.5, 0.5, 0.5]
+
+  - name: gnss_outlier_medium
+    experiment: experiment_2
+    dataset_overrides:
+      mode: fused
+      gnss_noise_model: outlier_mixture
+      gnss_noise_std: [0.05, 0.05, 0.05]
+      gnss_outlier_prob: 0.08
+      gnss_outlier_std: [1.5, 1.5, 1.5]
+
+  - name: gnss_outlier_high
+    experiment: experiment_2
+    dataset_overrides:
+      mode: fused
+      gnss_noise_model: outlier_mixture
+      gnss_noise_std: [0.05, 0.05, 0.05]
+      gnss_outlier_prob: 0.15
+      gnss_outlier_std: [3.0, 3.0, 3.0]
+
+  - name: gnss_outlier_very_high
+    experiment: experiment_2
+    dataset_overrides:
+      mode: fused
+      gnss_noise_model: outlier_mixture
+      gnss_noise_std: [0.05, 0.05, 0.05]
+      gnss_outlier_prob: 0.30
+      gnss_outlier_std: [5.0, 5.0, 5.0]
+
+  - name: imu_noise_low
+    experiment: experiment_4
+    dataset_overrides:
+      mode: fused
+      gnss_noise_model: gaussian
+      imu_noise_std: [0.01, 0.005]
+
+  - name: imu_noise_high
+    experiment: experiment_4
+    dataset_overrides:
+      mode: fused
+      gnss_noise_model: gaussian
+      imu_noise_std: [0.15, 0.08]
 
 ekf_cases:
   - name: ekf_default
 
-  - name: ekf_low_process_noise
-    motion_model:
-      process_noise_diag: [0.01, 0.01, 0.003]
-
 pf_cases:
-  - name: gaussian_baseline
-    num_particles: 3000
-    resample_threshold_ratio: 0.5
-    resampling_method: systematic
-    measurement_model:
-      likelihood_model: gaussian
-      outlier_weight: 0.05
-      outlier_noise_diag: [4.0, 4.0]
-
   - name: gaussian_mixture_default
     num_particles: 3000
     resample_threshold_ratio: 0.5
