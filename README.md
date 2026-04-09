@@ -212,7 +212,9 @@ Gaussian RMSE (lower is better)
 PF 3000 GMM        0.0218  ████
 PF 1000 Gaussian   0.0262  █████
 InEKF low Q        0.0344  ███████
+InEKF default      0.0398  ████████
 UKF default        0.0402  ████████
+UKF high alpha     0.0402  ████████
 ```
 
 ```text
@@ -220,15 +222,27 @@ Outlier RMSE (lower is better)
 PF 3000 GMM        0.1116  ███
 PF 1000 Gaussian   0.2033  █████
 InEKF low Q        0.4495  ███████████
+UKF high alpha     0.5171  █████████████
 UKF default        0.5171  █████████████
+InEKF default      0.5172  █████████████
 ```
 
 ```text
 Runtime per run (lower is better)
 InEKF default      0.027s  ███
+InEKF low Q        0.027s  ███
 PF 1000 Gaussian   0.056s  ██████
 UKF default        0.103s  ███████████
+UKF high alpha     0.103s  ███████████
 PF 3000 GMM        0.136s  ██████████████
+```
+
+```text
+Tuning impact snapshots
+InEKF Gaussian     0.0398 -> 0.0344  improvement
+InEKF Outlier      0.5172 -> 0.4495  improvement
+UKF Gaussian       0.0402 -> 0.0402  no visible change
+UKF Outlier        0.5171 -> 0.5171  no visible change
 ```
 
 ### Readout
