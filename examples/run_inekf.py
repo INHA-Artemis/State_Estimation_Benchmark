@@ -12,6 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from filters.invariant_kalman_filter import InvariantKalmanFilter
+from utils.filter_config import load_visualization_config, merge_visualization_config
 from utils.filter_initialization import align_initialization_with_ground_truth
 from utils.math_utils import compute_rmse
 from utils.prepare_dataset import prepare_dataset
@@ -26,11 +27,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run Invariant Kalman Filter and plot trajectory.")
     parser.add_argument("--dataset-config", default=str(PROJECT_ROOT / "config" / "dataset_config.yaml"))
     parser.add_argument("--inekf-config", default=str(PROJECT_ROOT / "config" / "inekf.yaml"))
+    parser.add_argument("--visualization-config", default=str(PROJECT_ROOT / "config" / "output_visualization.yaml"))
     parser.add_argument("--output-dir", default=str(PROJECT_ROOT / "outputs"))
     args = parser.parse_args()
 
     dataset_cfg = load_yaml(Path(args.dataset_config))
     inekf_cfg = load_yaml(Path(args.inekf_config))
+    inekf_cfg["visualization"] = merge_visualization_config(
+        load_visualization_config(args.visualization_config),
+        inekf_cfg.get("visualization"),
+    )
 
     pose_type, dataset_name, csv_path, dataset, gt, dt, timestamps_ns = prepare_dataset(dataset_cfg)
     _normalize_filter_config_for_pose(inekf_cfg, pose_type)
@@ -160,7 +166,6 @@ def _resize_list(values, dim: int) -> list[float]:
     if arr.size < dim:
         out[arr.size :] = arr[-1]
     return out.tolist()
-
 
 
 if __name__ == "__main__":

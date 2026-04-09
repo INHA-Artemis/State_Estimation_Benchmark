@@ -18,7 +18,7 @@ motion_model:
 measurement_model:
   position_indices: [0, 1]
   measurement_noise_diag: [0.7, 0.7]
-  likelihood_model: gaussian # options: gaussian, gaussian_mixture
+  likelihood_model: gaussian_mixture # options: gaussian, gaussian_mixture
   outlier_weight: 0.05
   outlier_noise_diag: [4.0, 4.0]
 
@@ -26,19 +26,6 @@ evaluation:
   enabled: true
   position_indices: [0, 1]
   yaw_index: 2
-
-visualization:
-  enabled: true
-  position_indices: [0, 1]
-  downsample: 20
-  elev: 24
-  azim: 38
-  show_projections: true
-  save_animation: true
-  animation:
-    format: mp4
-    fps: 500
-    tail_length: 10
 
 output:
   dir: outputs

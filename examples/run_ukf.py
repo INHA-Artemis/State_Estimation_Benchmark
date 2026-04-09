@@ -12,7 +12,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from filters.unscented_kalman_filter import UnscentedKalmanFilter
-from utils.filter_config import normalize_position_filter_config_for_pose
+from utils.filter_config import (
+    load_visualization_config,
+    merge_visualization_config,
+    normalize_position_filter_config_for_pose,
+)
 from utils.filter_initialization import align_initialization_with_ground_truth
 from utils.math_utils import compute_rmse
 from utils.prepare_dataset import prepare_dataset
@@ -27,11 +31,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run Unscented Kalman Filter and plot trajectory.")
     parser.add_argument("--dataset-config", default=str(PROJECT_ROOT / "config" / "dataset_config.yaml"))
     parser.add_argument("--ukf-config", default=str(PROJECT_ROOT / "config" / "ukf.yaml"))
+    parser.add_argument("--visualization-config", default=str(PROJECT_ROOT / "config" / "output_visualization.yaml"))
     parser.add_argument("--output-dir", default=str(PROJECT_ROOT / "outputs"))
     args = parser.parse_args()
 
     dataset_cfg = load_yaml(Path(args.dataset_config))
     ukf_cfg = load_yaml(Path(args.ukf_config))
+    ukf_cfg["visualization"] = merge_visualization_config(
+        load_visualization_config(args.visualization_config),
+        ukf_cfg.get("visualization"),
+    )
 
     pose_type, dataset_name, csv_path, dataset, gt, dt, timestamps_ns = prepare_dataset(dataset_cfg)
     normalize_position_filter_config_for_pose(ukf_cfg, pose_type)
@@ -101,7 +110,6 @@ def main() -> None:
 
     total_runtime = time.perf_counter() - total_start
     print(f"[UKF] Runtime (total): {total_runtime:.3f} sec")
-
 
 
 if __name__ == "__main__":

@@ -1,0 +1,15 @@
+# Goal: 공통 출력 시각화 파라미터를 필터 설정과 분리해 한 곳에서 관리한다.
+# What it does: trajectory/error plot 및 animation export 설정을 정의한다.
+visualization:
+  enabled: true
+  position_indices: [0, 1]
+  downsample: 20
+  elev: 24
+  azim: 38
+  show_projections: true
+  save_animation: true
+  error_moving_average_window: 50
+  animation:
+    format: mp4
+    fps: 500
+    tail_length: 10

@@ -176,6 +176,65 @@ The outlier rows use `gnss_noise_model: outlier_mixture`, `gnss_outlier_prob: 0.
 Key takeaways: `fused` runs improve over both before-filter baselines; `imu_only` PF can perform poorly because particles are not reweighted; under GNSS outliers, PF degrades less than EKF/UKF/InEKF in the current run.
 The next PF check is `likelihood_model: gaussian_mixture` for the robust outlier case.
 
+## Per-Filter Benchmark Update
+
+The repository now includes `benchmarks/per_filter_benchmark.py` and `benchmarks/per_filter_benchmark.yaml` for repeated same-filter sweeps.
+This benchmark fixes one filter family at a time, applies case-specific config overrides, changes the dataset seed across repeated trials, and writes both raw and aggregated CSV outputs under `outputs/benchmarks/per_filter/`.
+
+Latest repeated-trial setup:
+- datasets: `synthetic_2d_gaussian`, `synthetic_2d_outlier`
+- pose/mode: `2d`, `fused`
+- sequence length: `500`
+- trials: `100` per `(dataset case, filter case)` pair
+- dataset seed range: `10..109`
+- output files: `*_per_filter_raw.csv`, `*_per_filter_summary.csv`
+
+### Latest Results
+
+| Filter | Dataset Case | Filter Case | Mean RMSE | Std RMSE | Mean Runtime | Interpretation |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| PF | `synthetic_2d_gaussian` | `pf_1000_gaussian` | `0.0262` | `0.0036` | `0.055 sec` | fast baseline PF |
+| PF | `synthetic_2d_gaussian` | `pf_3000_gmm` | `0.0218` | `0.0023` | `0.136 sec` | best PF accuracy on clean data |
+| PF | `synthetic_2d_outlier` | `pf_1000_gaussian` | `0.2033` | `0.0344` | `0.056 sec` | outliers hurt Gaussian likelihood |
+| PF | `synthetic_2d_outlier` | `pf_3000_gmm` | `0.1116` | `0.0154` | `0.136 sec` | clear robustness gain from GMM likelihood |
+| UKF | `synthetic_2d_gaussian` | `ukf_default` | `0.0402` | `0.0012` | `0.103 sec` | baseline UKF |
+| UKF | `synthetic_2d_gaussian` | `ukf_high_alpha` | `0.0402` | `0.0012` | `0.103 sec` | nearly identical to default |
+| UKF | `synthetic_2d_outlier` | `ukf_default` | `0.5171` | `0.0479` | `0.102 sec` | strongly affected by outliers |
+| UKF | `synthetic_2d_outlier` | `ukf_high_alpha` | `0.5171` | `0.0479` | `0.102 sec` | alpha change does not help here |
+| InEKF | `synthetic_2d_gaussian` | `inekf_default` | `0.0398` | `0.0011` | `0.027 sec` | fastest tested configuration |
+| InEKF | `synthetic_2d_gaussian` | `inekf_low_process_noise` | `0.0344` | `0.0012` | `0.027 sec` | lower process noise improves clean-data fit |
+| InEKF | `synthetic_2d_outlier` | `inekf_default` | `0.5172` | `0.0479` | `0.027 sec` | same outlier sensitivity pattern as UKF |
+| InEKF | `synthetic_2d_outlier` | `inekf_low_process_noise` | `0.4495` | `0.0422` | `0.027 sec` | some improvement, but still not robust |
+
+### Readout
+
+- PF currently gives the best accuracy among the tested per-filter settings on both clean Gaussian and outlier-mixed synthetic data.
+- The strongest PF setting in this sweep is `pf_3000_gmm`; compared with `pf_1000_gaussian`, it improves RMSE from `0.0262` to `0.0218` on Gaussian data and from `0.2033` to `0.1116` on outlier data, with about `2.5x` runtime cost.
+- UKF sensitivity to `alpha` is negligible in this benchmark. `ukf_default` and `ukf_high_alpha` are effectively the same on both datasets.
+- InEKF is the fastest family in the current sweep at about `0.027 sec` per run. Lowering process noise helps, especially on the outlier dataset, but it still trails PF in robustness.
+- UKF and InEKF show very similar failure patterns on the outlier dataset, which is consistent with both relying on Gaussian measurement updates in the current setup.
+
+## Current Process Update
+
+Current benchmark workflow in the repository:
+1. Establish raw-input baselines and fused-filter comparisons on synthetic data.
+2. Add scenario splits such as clean Gaussian GNSS and outlier-mixture GNSS.
+3. Run repeated per-filter sweeps with controlled config overrides and changing dataset seeds.
+4. Save per-trial CSVs plus aggregated summaries for reproducible comparison.
+5. Use the summary tables to decide which filter parameters deserve promotion into default configs or follow-up experiments.
+
+Progress so far:
+- Baseline synthetic comparison across EKF, UKF, InEKF, and PF is documented above.
+- Repeated per-filter benchmarks have been completed for `PF`, `UKF`, and `InEKF`.
+- PF robustness under non-Gaussian GNSS noise is now supported by repeated-trial evidence, not just a single run.
+- UKF sigma-point tuning and InEKF process-noise tuning both have benchmark records, making it easier to distinguish meaningful gains from noise.
+- The current per-filter sweep does not yet include an updated EKF tuning table in this README section.
+
+Recommended next process steps:
+- Add an `ekf_cases` sweep to complete the same repeated-trial comparison set for all four filter families.
+- Promote the strongest validated settings into the default filter configs only after verifying they also generalize to longer synthetic runs or real datasets.
+- Extend the benchmark to `3d` and real sequences such as EuRoC or M2DGR so the conclusions are not limited to the current `2d` synthetic setup.
+
 ## Additional Benchmark Results
 
 The following results are older single-dataset benchmark records kept for reference.

@@ -1,0 +1,123 @@
+EKF/InEKF 실험 결과 분석
+
+요약
+
+현재 README의 Synthetic Comparison Summary에서 EKF와 InEKF의 fused 성능이 거의 같게 보이는 이유는, 실험 조건이 InEKF의 장점이 크게 드러나기 어려운 구조이기 때문이다. 현재 비교는 synthetic_test, 2d, 500 steps, fused mode 중심이며, GNSS position measurement가 매 step 들어가서 prediction model 차이를 계속 보정한다. 따라서 EKF와 InEKF의 state propagation 방식 차이가 RMSE에 크게 반영되지 않는다.
+
+README 기준 결과
+
+clean fused 조건에서는 EKF와 InEKF가 모두 RMSE(position) 0.0245로 기록되어 있다.
+
+- EKF: fused, RMSE(position) 0.0245, runtime 0.025 sec
+- InEKF: fused, RMSE(position) 0.0245, runtime 0.027 sec
+
+GNSS outlier 조건에서도 README에는 두 필터가 거의 같은 값으로 기록되어 있다.
+
+- EKF: fused, RMSE(position) 0.2502, runtime 0.025 sec
+- InEKF: fused, RMSE(position) 0.2502, runtime 0.027 sec
+
+다만 저장된 CSV output 기준으로 계산하면 완전히 같은 값은 아니다.
+
+- EKF outlier RMSE(position): 0.250209729790
+- InEKF outlier RMSE(position): 0.250243435966
+- EKF/InEKF estimate max difference: 0.02437984066051846
+
+즉 README의 4 decimal formatting 때문에 둘 다 0.2502로 표시되지만, 내부 trajectory는 약간 다르다. 차이가 작아서 표에서는 같게 보이는 것이다.
+
+왜 차이가 작게 보이는가
+
+1. measurement update가 거의 같은 구조이다.
+
+현재 2d fused 실험에서 두 필터는 GNSS position measurement를 사용한다. EKF는 measurement matrix H에서 position index에 1을 넣고 innovation을 계산한다. InEKF도 2d branch에서는 같은 방식으로 position measurement를 error state에 반영한다. 즉 measurement side에서는 두 필터가 거의 같은 correction을 수행한다.
+
+2. GNSS update가 매 step 들어간다.
+
+fused mode는 prediction + measurement update이다. 현재 synthetic dataset에서는 매 step GNSS measurement가 생성되고, CSV loader도 매 sample마다 measurement를 넘긴다. 이 때문에 prediction에서 생기는 EKF/InEKF 차이가 오래 누적되기 전에 GNSS update가 position을 다시 잡아준다.
+
+3. 현재 synthetic trajectory가 비교적 완만하다.
+
+2d synthetic control은 speed와 yaw_rate가 smooth sinusoidal 형태이다. 큰 initial orientation error, aggressive turning, long dead-reckoning interval 같은 조건이 아니므로 invariant formulation의 이점이 크게 드러나기 어렵다.
+
+4. config가 거의 동일하다.
+
+EKF와 InEKF는 initialization mean, covariance, process noise, measurement noise가 거의 같다.
+
+- initialization.mean: [0.0, 0.0, 0.0]
+- initialization.cov_diag: [1.0, 1.0, 0.3]
+- process_noise_diag: [0.02, 0.02, 0.005]
+- measurement_noise_diag: [0.7, 0.7]
+
+따라서 같은 measurement stream을 받으면 posterior estimate가 비슷해질 수밖에 없다.
+
+imu_only 결과에서는 차이가 이미 보인다
+
+README의 imu_only 결과는 fused보다 EKF/InEKF 차이가 더 크다.
+
+- InEKF: imu_only, RMSE(position) 0.1750
+- EKF: imu_only, RMSE(position) 0.2573
+
+imu_only에서는 GNSS correction이 없기 때문에 prediction model과 covariance propagation 차이가 더 직접적으로 드러난다. 이 결과는 InEKF가 현재 실험에서도 완전히 EKF와 같은 것이 아니라, fused condition에서 GNSS update가 차이를 덮고 있음을 보여준다.
+
+차이를 더 잘 드러낼 실험 설계
+
+1. sparse GNSS 실험
+
+GNSS measurement를 매 step이 아니라 5, 10, 20 step마다만 넣는다. 이렇게 하면 prediction error가 누적되는 구간이 생기고, EKF와 InEKF의 propagation 차이가 RMSE에 더 크게 나타날 수 있다.
+
+예상 효과:
+
+- clean fused에서는 EKF/InEKF 차이가 지금보다 커질 가능성이 높다.
+- GNSS outlier에서는 outlier correction 이후 회복 양상이 다르게 나타날 수 있다.
+
+주의할 점:
+
+- 현재 CSV loader는 NaN measurement 또는 missing measurement를 None으로 처리하지 않는다.
+- 따라서 gnss_update_period 또는 GNSS dropout을 구현하려면 load_dataset_from_csv에서 missing measurement를 None으로 넘기는 처리가 필요하다.
+
+2. long imu_only 실험
+
+sequence_length를 500에서 3000 또는 10000으로 늘리고 imu_only mode로 비교한다. GNSS correction이 없으면 small propagation difference가 장기간 누적된다.
+
+예상 효과:
+
+- InEKF와 EKF의 drift 차이가 더 명확해진다.
+- README의 imu_only 차이보다 더 큰 RMSE gap이 나올 가능성이 있다.
+
+3. 큰 initial yaw error 실험
+
+fused mode에서 initialization.mean에 yaw bias를 준다. 예를 들어 2d에서는 mean을 [0.0, 0.0, 0.8]처럼 설정할 수 있다.
+
+예상 효과:
+
+- large orientation error 조건에서 InEKF의 invariant error formulation 장점이 더 잘 보일 수 있다.
+- 단, GNSS가 너무 자주 들어오면 여전히 차이가 빨리 줄어들 수 있으므로 sparse GNSS와 함께 쓰는 것이 좋다.
+
+4. aggressive turning trajectory
+
+synthetic control의 yaw_rate amplitude를 키우거나 turning frequency를 높인다. 현재 yaw_rate는 완만한 sinusoidal 형태라 nonlinearity가 약하다.
+
+예상 효과:
+
+- EKF linearization error가 커질 수 있다.
+- InEKF prediction의 midpoint/invariant propagation 차이가 RMSE에 더 잘 반영될 수 있다.
+
+5. 3d 또는 6d 실험
+
+InEKF의 강점은 rotation, velocity, position이 결합된 Lie group 기반 state propagation에서 더 잘 드러난다. 따라서 2d보다 pose_type 6d, EuRoC, M2DGR 같은 3d scenario가 더 적합하다.
+
+주의할 점:
+
+- 현재 EKF 3d transition은 단순 state addition에 가까운 형태이고, InEKF 3d는 rotation matrix와 exp_so3를 사용한다.
+- 따라서 3d 비교를 공정하게 하려면 EKF 3d motion model도 IMU kinematics에 맞게 정리한 뒤 비교하는 것이 좋다.
+
+추천 실험 순서
+
+1. imu_only, sequence_length 3000 이상
+2. fused + sparse GNSS, 예: GNSS update every 10 steps
+3. fused + sparse GNSS + initial yaw error
+4. aggressive turning synthetic trajectory
+5. 3d/6d real dataset 또는 더 realistic한 IMU kinematics
+
+결론
+
+현재 README에서 EKF와 InEKF fused 성능이 비슷한 것은 구현이 완전히 같아서라기보다, experiment condition이 두 필터의 차이를 줄이는 방향으로 구성되어 있기 때문이다. 특히 2d position GNSS update가 매 step 들어가면 correction step이 prediction difference를 계속 상쇄한다. 차이를 명확히 보려면 GNSS correction을 sparse하게 만들고, imu_only interval을 늘리고, initial orientation error나 aggressive motion처럼 nonlinear propagation이 중요한 조건을 추가해야 한다.

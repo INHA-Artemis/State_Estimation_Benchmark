@@ -1,5 +1,21 @@
 from __future__ import annotations
 
+from copy import deepcopy
+from pathlib import Path
+
+from utils.yaml_loader import load_yaml
+
+
+def load_visualization_config(path: str | Path) -> dict:
+    cfg = load_yaml(Path(path))
+    return dict(cfg.get("visualization", {}))
+
+
+def merge_visualization_config(common_cfg: dict | None, filter_cfg: dict | None) -> dict:
+    merged = deepcopy(common_cfg or {})
+    _deep_update(merged, filter_cfg or {})
+    return merged
+
 
 def normalize_position_filter_config_for_pose(filter_cfg: dict, pose_type: str) -> None:
     if pose_type != "3d":
@@ -25,3 +41,11 @@ def normalize_position_filter_config_for_pose(filter_cfg: dict, pose_type: str) 
     visual_cfg = filter_cfg.setdefault("visualization", {})
     if len(list(visual_cfg.get("position_indices", [0, 1]))) < 3:
         visual_cfg["position_indices"] = [0, 1, 2]
+
+
+def _deep_update(base: dict, overrides: dict) -> None:
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_update(base[key], value)
+            continue
+        base[key] = deepcopy(value)

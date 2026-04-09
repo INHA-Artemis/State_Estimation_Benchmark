@@ -1,5 +1,5 @@
 # Goal: UKF 하이퍼파라미터와 noise 설정을 PF와 같은 형식으로 관리한다.
-# What it does: initialization, sigma point, motion/measurement noise, evaluation, visualization 설정을 정의한다.
+# What it does: initialization, sigma point, motion/measurement noise, evaluation 설정을 정의한다.
 filter:
   name: ukf
 
@@ -23,20 +23,6 @@ evaluation:
   enabled: true
   position_indices: [0, 1]
   yaw_index: 2
-
-visualization:
-  enabled: true
-  estimator_label: UKF
-  position_indices: [0, 1]
-  downsample: 20
-  elev: 24
-  azim: 38
-  show_projections: true
-  save_animation: true
-  animation:
-    format: mp4
-    fps: 500
-    tail_length: 10
 
 output:
   dir: outputs

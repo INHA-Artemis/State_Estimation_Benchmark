@@ -1,7 +1,7 @@
 # Dataset selection and runtime mode.
 dataset_type: synthetic # options: synthetic, euroc, rosbag, m2dgr
 dataset_name: synthetic_test # output/logging name
-pose_type: 2d # options: 2d, 6d
+pose_type: 6d # options: 2d, 6d
 mode: fused # options: imu_only, gnss_only, fused
 
 # Synthetic dataset.

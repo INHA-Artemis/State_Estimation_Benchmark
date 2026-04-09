@@ -13,6 +13,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from filters.particle_filter import ParticleFilter
+from utils.filter_config import (
+    load_visualization_config,
+    merge_visualization_config,
+    normalize_position_filter_config_for_pose,
+)
 from utils.filter_initialization import align_initialization_with_ground_truth
 from utils.math_utils import compute_rmse
 from utils.prepare_dataset import prepare_dataset
@@ -27,26 +32,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run Particle Filter and plot trajectory.")
     parser.add_argument("--dataset-config", default=str(PROJECT_ROOT / "config" / "dataset_config.yaml"))
     parser.add_argument("--pf-config", default=str(PROJECT_ROOT / "config" / "pf.yaml"))
+    parser.add_argument("--visualization-config", default=str(PROJECT_ROOT / "config" / "output_visualization.yaml"))
     parser.add_argument("--output-dir", default=str(PROJECT_ROOT / "outputs"))
     args = parser.parse_args()
 
     dataset_cfg = load_yaml(Path(args.dataset_config))
     pf_cfg = load_yaml(Path(args.pf_config))
+    pf_cfg["visualization"] = merge_visualization_config(
+        load_visualization_config(args.visualization_config),
+        pf_cfg.get("visualization"),
+    )
 
     pose_type, dataset_name, csv_path, dataset, gt, dt, timestamps_ns = prepare_dataset(dataset_cfg)
-
-    if pose_type == "3d":
-        measurement_cfg = pf_cfg.setdefault("measurement_model", {})
-        position_indices = list(measurement_cfg.get("position_indices", [0, 1]))
-        if len(position_indices) < 3:
-            measurement_cfg["position_indices"] = [0, 1, 2]
-
-        measurement_noise = list(measurement_cfg.get("measurement_noise_diag", [0.7, 0.7]))
-        if len(measurement_noise) == 1:
-            measurement_noise = measurement_noise * 3
-        elif len(measurement_noise) == 2:
-            measurement_noise.append(measurement_noise[-1])
-        measurement_cfg["measurement_noise_diag"] = measurement_noise
+    normalize_position_filter_config_for_pose(pf_cfg, pose_type)
 
     align_initialization_with_ground_truth(pf_cfg, gt, pose_type, dataset_cfg.get("mode", "fused"))
 
@@ -79,7 +77,8 @@ def main() -> None:
     )
     print(f"[PF] Estimates CSV saved: {saved_estimates_csv}")
 
-    vis_cfg = pf_cfg.get("visualization", {})
+    vis_cfg = dict(pf_cfg.get("visualization", {}))
+    vis_cfg["estimator_label"] = "PF"
 
     plot_path = out_dir / f"{dataset_name}_pf_trajectory.png"
     plot_results(estimates, gt, pose_type=pose_type, save_path=plot_path, visual_cfg=vis_cfg)
@@ -103,6 +102,7 @@ def main() -> None:
             fps=int(anim_cfg.get("fps", 20)),
             tail_length=int(anim_cfg.get("tail_length", 80)),
             moving_average_window=int(vis_cfg.get("error_moving_average_window", 50)),
+            estimator_label="PF",
         )
         if saved:
             print(f"[PF] Animation saved: {video_path}")
@@ -112,7 +112,6 @@ def main() -> None:
 
     total_runtime = time.perf_counter() - total_start
     print(f"[PF] Runtime (total): {total_runtime:.3f} sec")
-
 
 
 if __name__ == "__main__":
