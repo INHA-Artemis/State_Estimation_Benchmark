@@ -168,6 +168,23 @@ It is a repeated benchmark on `synthetic_test`, `3d`, `fused`, `1000` steps, and
 
 Scenario-level takeaway: PF is best in medium/high outlier scenarios, UKF is best in nominal and IMU-noise scenarios, and InEKF is the fastest across all current scenario cases.
 
+#### Benchmark Plots
+
+`filter_benchmark_raw_boxplots.png`: trial-level RMSE/runtime spread for each filter and scenario.
+
+![Filter Benchmark Raw Boxplots](outputs/benchmarks/plots/filter_benchmark_raw_boxplots.png)
+
+`filter_benchmark_summary_bars.png`: mean RMSE and runtime bars grouped by scenario case.
+
+![Filter Benchmark Summary Bars](outputs/benchmarks/plots/filter_benchmark_summary_bars.png)
+
+`filter_benchmark_summary_bars_by_experiment.png`: summary bars reorganized by experiment families (`experiment_1/2/4`).
+
+![Filter Benchmark Summary Bars By Experiment](outputs/benchmarks/plots/filter_benchmark_summary_bars_by_experiment.png)
+
+`filter_benchmark_summary_tradeoff.png`: accuracy-vs-runtime tradeoff view to compare fast/accurate settings.
+
+![Filter Benchmark Summary Tradeoff](outputs/benchmarks/plots/filter_benchmark_summary_tradeoff.png)
 
 A separate single-run PF sweep on `examples/run_pf.py` with the same `synthetic_test` dataset showed a clear speed/accuracy trade-off across particle counts:
 
