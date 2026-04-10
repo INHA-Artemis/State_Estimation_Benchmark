@@ -18,6 +18,7 @@ def prepare_dataset(dataset_cfg: dict):
     pose_type = dataset_cfg.get("pose_type", "2d")
     if pose_type == "6d":
         pose_type = "3d"
+    dataset_cfg["pose_type"] = pose_type
 
     mode = dataset_cfg.get("mode", "fused")
     if mode == "gps_only":
@@ -34,15 +35,15 @@ def prepare_dataset(dataset_cfg: dict):
 
     if dataset_type == "euroc":
         pose_type = "3d"
-        dataset_cfg["pose_type"] = "6d"
+        dataset_cfg["pose_type"] = "3d"
         controls, measurements, gt, dt, timestamps_ns = load_euroc_dataset(dataset_cfg)
     elif dataset_type in ("rosbag", "rosbag1", "rosbag2", "kaist_vio", "kaistvio", "kaist"):
         pose_type = "3d"
-        dataset_cfg["pose_type"] = "6d"
+        dataset_cfg["pose_type"] = "3d"
         controls, measurements, gt, dt, timestamps_ns = load_rosbag_dataset(dataset_cfg)
     elif dataset_type in ("m2dgr",):
         pose_type = "3d"
-        dataset_cfg["pose_type"] = "6d"
+        dataset_cfg["pose_type"] = "3d"
         controls, measurements, gt, dt, timestamps_ns = load_m2dgr_dataset(dataset_cfg)
     else:
         controls, gt = generate_imu_controls(dataset_cfg, pose_type=pose_type)
@@ -113,9 +114,13 @@ def _resolve_generated_csv_path(dataset_cfg: dict, dataset_name: str) -> Path:
         "synthetic_2d.csv",
         "synthetic_3d.csv",
         "synthetic_6d.csv",
+        "euroc_3d.csv",
         "euroc_6d.csv",
+        "kaist_vio_3d.csv",
         "kaist_vio_6d.csv",
+        "rosbag_3d.csv",
         "rosbag_6d.csv",
+        "m2dgr_3d.csv",
         "m2dgr_6d.csv",
     }
     if generated_csv_path.name in generic_names:

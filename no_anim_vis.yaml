@@ -1,0 +1,13 @@
+visualization:
+  enabled: true
+  position_indices: [0, 1, 2]
+  downsample: 20
+  elev: 24
+  azim: 38
+  show_projections: true
+  save_animation: false
+  error_moving_average_window: 50
+  animation:
+    format: mp4
+    fps: 30
+    tail_length: 20

@@ -19,7 +19,7 @@ class InvariantKalmanFilter:
         measurement_config: dict | None = None,
         initialization_config: dict | None = None,
     ) -> None:
-        if pose_type == "6d":
+        if pose_type == "6d":  # legacy alias
             pose_type = "3d"
         if pose_type not in ("2d", "3d"):
             raise ValueError("pose_type must be '2d' or '3d'.")

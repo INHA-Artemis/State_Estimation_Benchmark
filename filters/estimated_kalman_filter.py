@@ -18,7 +18,7 @@ class ExtendedKalmanFilter(PoseFilterMixin):
         motion_config: dict | None = None,
         measurement_config: dict | None = None,
     ) -> None:
-        if pose_type == "6d":
+        if pose_type == "6d":  # legacy alias
             pose_type = "3d"
         if pose_type not in ("2d", "3d"):
             raise ValueError("pose_type must be '2d' or '3d'.")
@@ -40,6 +40,13 @@ class ExtendedKalmanFilter(PoseFilterMixin):
             meas_cfg.get("measurement_noise_diag", np.ones(self.measurement_indices.size)),
             self.measurement_indices.size,
         )
+
+        self.linear_input_type = str(motion_cfg.get("linear_input_type", "velocity")).lower()
+        if self.linear_input_type not in {"velocity", "acceleration"}:
+            raise ValueError("motion_model.linear_input_type must be 'velocity' or 'acceleration'.")
+        self.gravity = np.asarray(motion_cfg.get("gravity", [0.0, 0.0, -9.81]), dtype=float).reshape(-1)
+        if self.pose_type == "3d" and self.gravity.size != 3:
+            raise ValueError("motion_model.gravity must contain 3 values for 3D pose.")
 
         self.x = zero_state(self.pose_type)
         self.P = np.eye(self.dim, dtype=float)

@@ -13,7 +13,7 @@ Implemented filters:
 
 Current state representations:
 - `2d`: `[x, y, yaw]`
-- `6d`: `[x, y, z, roll, pitch, yaw]`
+- `3d`: `[p(3), v(3), orientation(roll, pitch, yaw), IMU bias(ba(3), bg(3))]`
 
 Supported dataset sources:
 - `synthetic`
@@ -84,30 +84,32 @@ python3 examples/plot_dataset_before.py --source both
 Dataset setup examples and dataset-specific notes were moved to [datasets/README.md](/workspace/State_Estimation_Benchmark/datasets/README.md).
 
 ## Synthetic Comparison Summary
+All rows below use `synthetic_test`, `3d`, `1000` steps from the latest single-run logs in `examples/run_*.py`.
+Cases are split by mode (`fused` vs `imu_only`) and GNSS noise setting (`outlier_mixture` vs `gaussian`).
 
-All rows below use `synthetic_test`, `2d`, `500` steps.
-`Before` rows are raw-input baselines; filter rows are actual estimator runs.
-The outlier rows use `gnss_noise_model: outlier_mixture`, `gnss_outlier_prob: 0.1`, and `gnss_outlier_std: [2.0, 2.0, 2.0]`; the PF outlier run uses `3000` particles with Gaussian likelihood.
-
-| Group | Case | Mode / Source | RMSE (position) | Runtime (filter only) | Note |
+| Mode | Noise | Filter | RMSE (position) | Runtime (filter only) | Note |
 | --- | --- | --- | ---: | ---: | --- |
-| **Before GNSS** | Raw GNSS | `--source gnss` | `0.0705` | - | raw GNSS vs GT |
-| **Before IMU-only** | Open-loop control | `--source imu` | `0.1731` | - | deterministic control integration |
-| **imu-only** | InEKF | `imu_only` | `0.1750` | - | prediction only |
-|  | EKF | `imu_only` | `0.2573` | - | prediction only |
-|  | PF | `imu_only` | `3.2280` | - | no measurement reweighting |
-|  | UKF | `imu_only` | `12.1211` | - | prediction only |
-| **fused** | EKF | `fused` | `0.0245` | `0.025 sec` | IMU + GNSS |
-|  | InEKF | `fused` | `0.0245` | `0.027 sec` | IMU + GNSS |
-|  | PF | `fused` | `0.0252` | `0.118 sec` | 6000 particles |
-|  | UKF | `fused` | `0.0451` | `0.105 sec` | IMU + GNSS |
-| **GNSS outlier** | PF | `fused` | `0.1712` | `0.123 sec` | 3000 particles, Gaussian likelihood |
-|  | EKF | `fused` | `0.2502` | `0.025 sec` | Gaussian update |
-|  | InEKF | `fused` | `0.2502` | `0.027 sec` | Gaussian update |
-|  | UKF | `fused` | `0.2526` | `0.104 sec` | Gaussian update |
+| `fused` | `outlier_mixture` | NoFilter | `0.9610` | `0.002 sec` | from `examples/run_noFilter.py` |
+| `fused` | `outlier_mixture` | PF | `0.1707` | `3.125 sec` | from `examples/run_pf.py` |
+| `fused` | `outlier_mixture` | UKF | `0.8977` | `1.375 sec` | from `examples/run_ukf.py` |
+| `fused` | `outlier_mixture` | EKF | `0.5781` | `0.092 sec` | from `examples/run_ekf.py` |
+| `fused` | `outlier_mixture` | InEKF | `0.6552` | `0.080 sec` | from `examples/run_inekf.py` |
+| `fused` | `gaussian` | NoFilter | `0.0864` | `0.002 sec` | from `examples/run_noFilter.py` |
+| `fused` | `gaussian` | PF | `0.1597` | `3.149 sec` | from `examples/run_pf.py` |
+| `fused` | `gaussian` | UKF | `0.0825` | `1.351 sec` | from `examples/run_ukf.py` |
+| `fused` | `gaussian` | EKF | `0.1153` | `0.088 sec` | from `examples/run_ekf.py` |
+| `fused` | `gaussian` | InEKF | `0.0917` | `0.081 sec` | from `examples/run_inekf.py` |
+| `imu_only` | `outlier_mixture` | NoFilter | `53.5276` | `0.002 sec` | from `examples/run_noFilter.py` |
+| `imu_only` | `outlier_mixture` | PF | `53.9181` | `3.338 sec` | from `examples/run_pf.py` |
+| `imu_only` | `outlier_mixture` | EKF | `23.9923` | `0.048 sec` | from `examples/run_ekf.py` |
+| `imu_only` | `outlier_mixture` | InEKF | `53.5861` | `0.032 sec` | from `examples/run_inekf.py` |
+| `imu_only` | `gaussian` | NoFilter | `53.5276` | `0.002 sec` | from `examples/run_noFilter.py` |
+| `imu_only` | `gaussian` | PF | `53.9181` | `3.366 sec` | from `examples/run_pf.py` |
+| `imu_only` | `gaussian` | UKF | `34.5726` | `0.949 sec` | from `examples/run_ukf.py` |
+| `imu_only` | `gaussian` | EKF | `23.9923` | `0.049 sec` | from `examples/run_ekf.py` |
+| `imu_only` | `gaussian` | InEKF | `53.5861` | `0.032 sec` | from `examples/run_inekf.py` |
 
-Key takeaways: `fused` runs improve over both before-filter baselines; `imu_only` PF can perform poorly because particles are not reweighted; under GNSS outliers, PF degrades less than EKF/UKF/InEKF in the current run.
-The next PF check is `likelihood_model: gaussian_mixture` for the robust outlier case.
+Key takeaways from these runs: in `fused` mode with `outlier_mixture`, PF is best RMSE (`0.1707`) and clearly improves over NoFilter (`0.9610`); in `fused` mode with `gaussian`, UKF is best RMSE (`0.0825`) and close to NoFilter (`0.0864`). In `imu_only`, EKF is best among listed filters, but overall errors remain much larger than `fused`.
 
 ## Per-Filter Benchmark Update
 
@@ -115,91 +117,57 @@ The repository now includes `benchmarks/per_filter_benchmark.py` and `benchmarks
 This benchmark fixes one filter family at a time, applies case-specific config overrides, changes the dataset seed across repeated trials, and writes both raw and aggregated CSV outputs under `outputs/benchmarks/per_filter/`.
 
 Latest repeated-trial setup:
-- datasets: `synthetic_2d_gaussian`, `synthetic_2d_outlier`
-- pose/mode: `2d`, `fused`
-- sequence length: `500`
+- datasets: `synthetic_2d_gaussian`, `synthetic_2d_outlier`, `synthetic_3d_gaussian`, `synthetic_3d_outlier`
+- pose/mode: `2d` and `3d`, `fused`
+- sequence length: `1000`
 - trials: `100` per `(dataset case, filter case)` pair
 - dataset seed range: `10..109`
 - output files: `*_per_filter_raw.csv`, `*_per_filter_summary.csv`
 
 ### At A Glance
 
-- Accuracy winner on clean Gaussian GNSS: `PF pf_3000_gmm_w005_n4` with RMSE `0.0218`
-- Accuracy winner on outlier GNSS: `PF pf_3000_gmm_w020_n16` with RMSE `0.0901`
-- Speed winner in the current sweep: `EKF` at about `0.025 sec` per run
-- Strongest non-PF baseline: `EKF default_config_noise` with RMSE `0.0229 / 0.2976`
+- 2D Gaussian best RMSE: `EKF ekf_default_config_noise` at `0.0304`
+- 2D outlier best RMSE: `PF pf_10000_gmm_w010_n4` at `0.0442`
+- 3D Gaussian best RMSE: `UKF ukf_high_alpha_beta0_kappa2` at `0.0572`
+- 3D outlier best RMSE: `PF pf_20000_gmm_w005_n4` at `0.1651`
+- Fastest 2D runtime: `EKF ekf_small_init_cov` at about `0.049 sec` per run
 
 ### Compact Comparison
 
-| What to compare | Best setting | Key number | Why it matters |
-| --- | --- | ---: | --- |
-| Clean-data accuracy | `PF pf_3000_gmm_w005_n4` | `0.0218 RMSE` | best result on Gaussian GNSS |
-| Outlier robustness | `PF pf_3000_gmm_w020_n16` | `0.0901 RMSE` | best result under outlier GNSS |
-| Fastest runtime | `EKF default/low_process_noise` | `0.025 sec` | slightly faster than InEKF on the same 2D sweep |
-| Best non-PF accuracy | `EKF default_config_noise` | `0.0229 / 0.2976` | strongest EKF-family result in this sweep |
-
-### Visual Readout
-
-```text
-Gaussian RMSE (lower is better)
-PF gmm w005 n4     0.0218  ████
-EKF cfg noise      0.0229  ████
-PF 1000 gaussian   0.0262  █████
-EKF low Q          0.0344  ███████
-InEKF low Q        0.0344  ███████
-UKF low Q          0.0348  ███████
-InEKF default      0.0398  ████████
-UKF default sigma  0.0402  ████████
-```
-
-```text
-Outlier RMSE (lower is better)
-PF gmm w020 n16    0.0901  ███
-PF gmm w010 n9     0.0978  ███
-PF 1000 gaussian   0.2033  ██████
-EKF cfg noise      0.2976  █████████
-UKF cfg noise      0.2988  █████████
-EKF low Q          0.4495  █████████████
-InEKF low Q        0.4495  █████████████
-UKF default sigma  0.5171  ███████████████
-```
-
-```text
-Runtime per run (lower is better)
-EKF                0.025s  ███
-InEKF              0.027s  ███
-PF 1000 gaussian   0.056s  ██████
-UKF                0.101s  ███████████
-PF 3000 GMM        0.136s  ██████████████
-```
+| Dataset case | Best RMSE setting | RMSE mean | Fastest setting | Runtime mean |
+| --- | --- | ---: | --- | ---: |
+| `synthetic_2d_gaussian` | `ekf_default_config_noise` | `0.0304` | `ekf_small_init_cov` | `0.049 sec` |
+| `synthetic_2d_outlier_mixture` | `pf_10000_gmm_w010_n4` | `0.0442` | `ekf_small_init_cov` | `0.049 sec` |
+| `synthetic_3d_gaussian` | `ukf_high_alpha_beta0_kappa2` | `0.0572` | `inekf_default` | `0.080 sec` |
+| `synthetic_3d_outlier_mixture` | `pf_20000_gmm_w005_n4` | `0.1651` | `inekf_default` | `0.080 sec` |
 
 ### Readout
 
-- PF remains the most accurate family in both scenarios. On Gaussian data, the best case is `pf_3000_gmm_w005_n4` at `0.0218`; on outlier data, the best case is `pf_3000_gmm_w020_n16` at `0.0901`.
-- PF tuning matters mainly in the outlier setting. Moving from `pf_1000_gaussian` to the best GMM setting improves RMSE from `0.2033` to `0.0901`, with runtime increasing from about `0.056 sec` to `0.136 sec`.
-- Among Gaussian-style filters, `ekf_default_config_noise` is the strongest baseline at `0.0229` on Gaussian data and `0.2976` on outlier data. `ukf_default_config_noise` is very similar at `0.0415 / 0.2988`, while the dataset-noise/default-sigma UKF cases stay much more outlier-sensitive.
-- EKF is still the fastest family in this sweep at about `0.025 sec` per run, with InEKF close behind at about `0.027 sec`.
+- PF is strongest in outlier-heavy cases (`2d_outlier`, `3d_outlier`), while non-PF filters can win in cleaner settings.
+- On `synthetic_2d_gaussian`, `ekf_default_config_noise` is the best non-PF and overall best RMSE (`0.0304`), with `ekf_small_init_cov` also the fastest (`0.049 sec`).
+- On `synthetic_3d_gaussian`, tuned UKF sigma points (`ukf_high_alpha_beta0_kappa2`) produce the best RMSE (`0.0572`), while InEKF remains much faster (`0.080 sec`) than UKF/PF.
+- In the current sweep, fastest runtime is consistently EKF in 2D and InEKF in 3D, while PF trades runtime for stronger robustness under GNSS outliers.
+
 
 ## Additional Benchmark Results
 
-The following results are older single-dataset benchmark records kept for reference.
-They use different dataset lengths/configs from the `Synthetic Comparison Summary`, so compare them by scenario rather than as a single leaderboard.
+The table below reflects the latest `outputs/benchmarks/filter_benchmark_summary.csv` generated by `benchmarks/run_filter_benchmark.py`.
+It is a repeated benchmark on `synthetic_test`, `3d`, `fused`, `1000` steps, and `100` trials per scenario case.
 
 ### Synthetic: `synthetic_test`
 
-This repeated benchmark used `synthetic_test`, `3d`, `fused`, `500` steps, and `100` trials.
-The table below reflects the latest `benchmarks/run_filter_benchmark.py` summary.
+| Scenario case | Best RMSE (filter/case) | RMSE mean | Fastest runtime (filter/case) | Runtime mean |
+| --- | --- | ---: | --- | ---: |
+| `gnss_nominal` | `ukf/default_sigma_points` | `0.0830` | `inekf/velocity_gravity_default` | `0.079 sec` |
+| `gnss_outlier_low` | `inekf/velocity_gravity_default` | `0.1260` | `inekf/velocity_gravity_default` | `0.079 sec` |
+| `gnss_outlier_medium` | `pf/gaussian_mixture_default` | `0.1717` | `inekf/velocity_gravity_default` | `0.081 sec` |
+| `gnss_outlier_high` | `pf/gaussian_mixture_default` | `0.1822` | `inekf/velocity_gravity_default` | `0.082 sec` |
+| `gnss_outlier_very_high` | `pf/gaussian_mixture_default` | `0.2183` | `inekf/velocity_gravity_default` | `0.081 sec` |
+| `imu_noise_low` | `ukf/default_sigma_points` | `0.0830` | `inekf/velocity_gravity_default` | `0.082 sec` |
+| `imu_noise_high` | `ukf/default_sigma_points` | `0.0827` | `inekf/velocity_gravity_default` | `0.081 sec` |
 
-| Filter | Case | Mean RMSE (position) | Std RMSE | Mean Runtime (filter only) | Status |
-| --- | --- | ---: | ---: | ---: | --- |
-| PF | `gaussian_mixture_default` | `0.0850` | `0.0143` | `0.204 sec` | measured |
-| PF | `gaussian_baseline` | `0.1789` | `0.0282` | `0.188 sec` | measured |
-| EKF | `ekf_low_process_noise` | `0.2562` | `0.0302` | `0.028 sec` | measured |
-| EKF | `ekf_default` | `0.2992` | `0.0336` | `0.028 sec` | measured |
-| UKF | `default_sigma_points` | `0.3095` | `0.0352` | `0.205 sec` | measured |
-| InEKF | `velocity_gravity_default` | `0.3123` | `0.0328` | `0.040 sec` | measured |
+Scenario-level takeaway: PF is best in medium/high outlier scenarios, UKF is best in nominal and IMU-noise scenarios, and InEKF is the fastest across all current scenario cases.
 
-Current takeaway: on this 3D synthetic repeated benchmark, `PF gaussian_mixture_default` is the most accurate setting, while `EKF` gives the fastest runtime among the tested filters.
 
 A separate single-run PF sweep on `examples/run_pf.py` with the same `synthetic_test` dataset showed a clear speed/accuracy trade-off across particle counts:
 

@@ -30,7 +30,7 @@ class ParticleFilter:
         resampling_method: str = "systematic",
     ) -> None:
         # pose 타입 정규화 및 검증
-        if pose_type == "6d":
+        if pose_type == "6d":  # legacy alias
             pose_type = "3d"
         if pose_type not in ("2d", "3d"):
             raise ValueError("pose_type must be '2d' or '3d'.")
@@ -58,6 +58,12 @@ class ParticleFilter:
 
         # 프로세스 노이즈(상태 차원에 맞춰 보정)
         self.process_noise_diag = fit_diag(motion_cfg.get("process_noise_diag", np.zeros(self.dim)), self.dim, fill_missing="zero")
+        self.linear_input_type = str(motion_cfg.get("linear_input_type", "velocity")).lower()
+        if self.linear_input_type not in {"velocity", "acceleration"}:
+            raise ValueError("motion_model.linear_input_type must be 'velocity' or 'acceleration'.")
+        self.gravity = np.asarray(motion_cfg.get("gravity", [0.0, 0.0, -9.81]), dtype=float).reshape(-1)
+        if self.pose_type == "3d" and self.gravity.size != 3:
+            raise ValueError("motion_model.gravity must contain 3 values for 3D pose.")
 
         # 측정 인덱스/노이즈 설정
         default_meas_dim = 2 if self.pose_type == "2d" else 3
@@ -122,6 +128,7 @@ class ParticleFilter:
         # 입자 샘플링
         std = np.sqrt(np.clip(cov, 0.0, None))
         self.particles = mean_vec[None, :] + self.rng.normal(0.0, std, size=(self.num_particles, self.dim))
+        self._normalize_particle_angles()
         self.weights.fill(1.0 / self.num_particles)
         self.initialized = True
 
@@ -141,6 +148,21 @@ class ParticleFilter:
                 self.particles[:, 0] += speed * np.cos(yaw) * dt
                 self.particles[:, 1] += speed * np.sin(yaw) * dt
                 self.particles[:, 2] += yaw_rate * dt
+            elif self.dim >= 9 and u.size >= 6:
+                linear_cmd = u[0:3][None, :]
+                angular_cmd = u[3:6][None, :]
+
+                if self.dim >= 15:
+                    linear_cmd = linear_cmd - self.particles[:, 9:12]
+                    angular_cmd = angular_cmd - self.particles[:, 12:15]
+
+                if self.linear_input_type == "acceleration":
+                    self.particles[:, 3:6] += (linear_cmd + self.gravity[None, :]) * dt
+                else:
+                    self.particles[:, 3:6] = linear_cmd
+
+                self.particles[:, 0:3] += self.particles[:, 3:6] * dt
+                self.particles[:, 6:9] += angular_cmd * dt
             else:
                 u = fit_vector(u, self.dim)
                 self.particles += u[None, :] * dt
@@ -148,6 +170,7 @@ class ParticleFilter:
         # dt가 작은 샘플에서 노이즈가 과도하게 누적되지 않도록 시간 간격에 맞춰 스케일한다.
         std = np.sqrt(np.clip(self.process_noise_diag, 0.0, None)) * np.sqrt(max(float(dt), 1e-12))
         self.particles += self.rng.normal(0.0, std, size=(self.num_particles, self.dim))
+        self._normalize_particle_angles()
         return self.particles
 
     def measurement_update(self, measurement: Optional[Iterable[float]]) -> np.ndarray:
@@ -205,9 +228,26 @@ class ParticleFilter:
         self.weights.fill(1.0 / self.num_particles)
 
     def estimate_pose(self) -> np.ndarray:
-        # 가중 평균 상태 추정
-        est = np.average(self.particles, axis=0, weights=self.weights)
-        # 각도 항목은 원형 평균 사용
+        # 가중 평균 상태를 pose 형태(2D: 3, 3D: 6)로 반환
+        mean_state = np.average(self.particles, axis=0, weights=self.weights)
+
+        if self.dim == 3:
+            est = mean_state.copy()
+            s = np.average(np.sin(self.particles[:, 2]), weights=self.weights)
+            c = np.average(np.cos(self.particles[:, 2]), weights=self.weights)
+            est[2] = np.arctan2(s, c)
+            return est
+
+        if self.dim >= 9:
+            pose = np.concatenate([mean_state[0:3], mean_state[6:9]])
+            angle_cols = [6, 7, 8]
+            for pose_idx, col_idx in enumerate(angle_cols, start=3):
+                s = np.average(np.sin(self.particles[:, col_idx]), weights=self.weights)
+                c = np.average(np.cos(self.particles[:, col_idx]), weights=self.weights)
+                pose[pose_idx] = np.arctan2(s, c)
+            return pose
+
+        est = mean_state.copy()
         for idx in self._angle_indices():
             s = np.average(np.sin(self.particles[:, idx]), weights=self.weights)
             c = np.average(np.cos(self.particles[:, idx]), weights=self.weights)
@@ -244,7 +284,7 @@ class ParticleFilter:
             estimates.append(self.step(control, measurement, dt, mode=mode))
 
         if not estimates:
-            return np.zeros((0, self.dim), dtype=float)
+            return np.zeros((0, 3 if self.pose_type == "2d" else 6), dtype=float)
         return np.vstack(estimates)
 
     def expected_measurement(self, state: Iterable[float]) -> np.ndarray:
@@ -254,7 +294,13 @@ class ParticleFilter:
     def _angle_indices(self) -> list[int]:
         if self.dim == 3:
             return [2]
+        if self.dim >= 9:
+            return [6, 7, 8]
         return [3, 4, 5]
+
+    def _normalize_particle_angles(self) -> None:
+        for idx in self._angle_indices():
+            self.particles[:, idx] = np.arctan2(np.sin(self.particles[:, idx]), np.cos(self.particles[:, idx]))
 
 
 def _diagonal_gaussian_logpdf(innovation: np.ndarray, variance: np.ndarray) -> np.ndarray:

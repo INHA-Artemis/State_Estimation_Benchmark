@@ -23,7 +23,7 @@ def align_initialization_with_ground_truth(
     if pose_type == "2d":
         mean = _fit_pose(first_gt, 3)
     else:
-        mean = _fit_pose(first_gt, 6)
+        mean = _fit_3d_state_from_pose(first_gt)
 
     init_cfg["mean"] = mean.tolist()
 
@@ -32,4 +32,20 @@ def _fit_pose(values: Iterable[float], dim: int) -> np.ndarray:
     vector = np.asarray(list(values), dtype=float).reshape(-1)
     out = np.zeros(dim, dtype=float)
     out[: min(dim, vector.size)] = vector[: min(dim, vector.size)]
+    return out
+
+
+def _fit_3d_state_from_pose(values: Iterable[float]) -> np.ndarray:
+    """Map GT pose [p, rpy] to state [p, v, orientation, imu_bias]."""
+    vector = np.asarray(list(values), dtype=float).reshape(-1)
+    out = np.zeros(15, dtype=float)
+
+    if vector.size >= 3:
+        out[0:3] = vector[0:3]
+
+    if vector.size >= 9:
+        out[6:9] = vector[6:9]
+    elif vector.size >= 6:
+        out[6:9] = vector[3:6]
+
     return out

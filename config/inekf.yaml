@@ -1,25 +1,28 @@
 # Goal: InEKF 하이퍼파라미터와 noise 설정을 benchmark 형식으로 관리한다.
 # What it does: initialization, invariant motion/measurement noise, evaluation 설정을 정의한다.
+# Note: InEKF 3D는 내부 error-state 차원(9)을 사용한다.
 filter:
   name: inekf
 
 initialization:
-  mean: [0.0, 0.0, 0.0]
-  cov_diag: [1.0, 1.0, 0.3]
+  # pose mean: [x, y, z, roll, pitch, yaw]
+  mean: [0.0, 0.0, 0.0, 0.1745, -0.1396, 0.3491]
+  # InEKF 3D error-state cov: [dR(3), dv(3), dp(3)]
+  cov_diag: [0.2, 0.2, 0.2, 0.3, 0.3, 0.3, 1.0, 1.0, 1.0]
 
 motion_model:
-  process_noise_diag: [0.02, 0.02, 0.005]
+  process_noise_diag: [0.02, 0.02, 0.02, 0.03, 0.03, 0.03, 0.05, 0.05, 0.05]
   linear_input_type: velocity # options: velocity, acceleration
   gravity: [0.0, 0.0, -9.81]
 
 measurement_model:
-  position_indices: [0, 1]
-  measurement_noise_diag: [0.7, 0.7]
+  position_indices: [0, 1, 2]
+  measurement_noise_diag: [0.05, 0.05, 0.05]
 
 evaluation:
   enabled: true
-  position_indices: [0, 1]
-  yaw_index: 2
+  position_indices: [0, 1, 2]
+  yaw_index: 5
 
 output:
   dir: outputs

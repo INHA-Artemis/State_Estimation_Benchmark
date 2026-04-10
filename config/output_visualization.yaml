@@ -11,5 +11,5 @@ visualization:
   error_moving_average_window: 50
   animation:
     format: mp4
-    fps: 500
+    fps: 50
     tail_length: 10

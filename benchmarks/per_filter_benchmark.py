@@ -31,18 +31,17 @@ DEFAULT_CONFIG_PATHS = {
     "ukf": Path("config/ukf.yaml"),
     "inekf": Path("config/inekf.yaml"),
 }
+FILTER_EXECUTION_ORDER = ("pf", "ukf", "ekf", "inekf")
 DEFAULT_OUTPUT_DIR = Path("outputs/benchmarks/per_filter")
 DEFAULT_DATASET_CONFIG_PATH = Path("config/dataset_config.yaml")
 
 
 def main() -> None:
     cfg = load_yaml(PER_FILTER_BENCHMARK_CONFIG_PATH)
-    filter_name = str(cfg.get("filter", "")).strip().lower()
-    if filter_name not in DEFAULT_CONFIG_PATHS:
-        raise ValueError("filter must be one of: ekf, pf, ukf, inekf")
+    filter_option = str(cfg.get("filter", "")).strip().lower()
+    selected_filters = _resolve_filter_names(filter_option)
 
     dataset_config_path = _resolve_path(DEFAULT_DATASET_CONFIG_PATH)
-    filter_config_path = _resolve_path(DEFAULT_CONFIG_PATHS[filter_name])
     output_dir = _resolve_path(cfg.get("output_dir", str(DEFAULT_OUTPUT_DIR)))
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -50,90 +49,114 @@ def main() -> None:
     dataset_seed_start = int(cfg.get("dataset_seed_start", 10))
     sync_filter_seed = bool(cfg.get("sync_filter_seed_with_dataset_seed", True))
     dataset_cases = list(cfg.get("dataset_cases", []))
-    filter_cases = _load_filter_cases(cfg, filter_name)
     if not dataset_cases:
         raise ValueError("per_filter_benchmark.yaml must define at least one dataset_cases entry")
-    if not filter_cases:
-        raise ValueError(
-            "per_filter_benchmark.yaml must define at least one enabled filter case for "
-            f"'{filter_name}' via '{filter_name}_cases' or 'filter_cases'"
-        )
 
-    total_runs = len(dataset_cases) * len(filter_cases) * num_trials
-    print(f"[PerFilterBenchmark] Filter          : {filter_name}")
+    filter_cases_map: dict[str, list[dict[str, Any]]] = {}
+    total_runs = 0
+    for filter_name in selected_filters:
+        filter_cases = _load_filter_cases(cfg, filter_name)
+        if not filter_cases:
+            raise ValueError(
+                "per_filter_benchmark.yaml must define at least one enabled filter case for "
+                f"'{filter_name}' via '{filter_name}_cases' or 'filter_cases'"
+            )
+        filter_cases_map[filter_name] = filter_cases
+        total_runs += len(dataset_cases) * len(filter_cases) * num_trials
+
+    print(f"[PerFilterBenchmark] Filters         : {', '.join(selected_filters)}")
     print(f"[PerFilterBenchmark] Config          : {PER_FILTER_BENCHMARK_CONFIG_PATH}")
     print(f"[PerFilterBenchmark] Dataset cases   : {len(dataset_cases)}")
-    print(f"[PerFilterBenchmark] Filter cases    : {len(filter_cases)}")
+    print(
+        "[PerFilterBenchmark] Filter cases    : "
+        + ", ".join(f"{name}={len(filter_cases_map[name])}" for name in selected_filters)
+    )
     print(f"[PerFilterBenchmark] Trials per pair : {num_trials}")
     print(f"[PerFilterBenchmark] Total runs      : {total_runs}")
 
-    raw_rows: list[dict[str, Any]] = []
+    raw_rows_all: list[dict[str, Any]] = []
 
     with tqdm(total=total_runs, desc="Per-filter benchmark", unit="run") as pbar:
-        for dataset_case in dataset_cases:
-            dataset_case_name = str(dataset_case.get("name", "dataset_case"))
-            dataset_overrides = copy.deepcopy(dataset_case.get("dataset_overrides", {}))
-            print(f"[PerFilterBenchmark] Dataset case    : {dataset_case_name}")
+        for filter_name in selected_filters:
+            filter_config_path = _resolve_path(DEFAULT_CONFIG_PATHS[filter_name])
+            filter_cases = filter_cases_map[filter_name]
+            print(f"[PerFilterBenchmark] Running filter  : {filter_name}")
 
-            for filter_case in filter_cases:
-                filter_case_name = str(filter_case.get("name", "filter_case"))
-                filter_overrides = copy.deepcopy(filter_case.get("filter_overrides", {}))
+            for dataset_case in dataset_cases:
+                dataset_case_name = str(dataset_case.get("name", "dataset_case"))
+                dataset_overrides = copy.deepcopy(dataset_case.get("dataset_overrides", {}))
+                print(f"[PerFilterBenchmark] Dataset case    : {dataset_case_name}")
 
-                for trial in range(num_trials):
-                    dataset_seed = dataset_seed_start + trial
-                    dataset_cfg = load_yaml(dataset_config_path)
-                    _deep_update(dataset_cfg, dataset_overrides)
-                    dataset_cfg["seed"] = dataset_seed
+                for filter_case in filter_cases:
+                    filter_case_name = str(filter_case.get("name", "filter_case"))
+                    filter_overrides = copy.deepcopy(filter_case.get("filter_overrides", {}))
 
-                    pose_type, dataset_name, csv_path, dataset, gt, _dt, _timestamps_ns = prepare_dataset(dataset_cfg)
-                    sequence_length = len(dataset)
-                    mode = str(dataset_cfg.get("mode", "fused"))
-                    dataset_type = str(dataset_cfg.get("dataset_type", "synthetic"))
+                    for trial in range(num_trials):
+                        dataset_seed = dataset_seed_start + trial
+                        dataset_cfg = load_yaml(dataset_config_path)
+                        _deep_update(dataset_cfg, dataset_overrides)
+                        dataset_cfg["seed"] = dataset_seed
 
-                    filter_cfg = load_yaml(filter_config_path)
-                    _deep_update(filter_cfg, filter_overrides)
-                    _normalize_filter_config_for_pose(filter_name, filter_cfg, pose_type)
-                    align_initialization_with_ground_truth(filter_cfg, gt, pose_type, mode)
-                    if sync_filter_seed and filter_name == "pf":
-                        filter_cfg["seed"] = dataset_seed
+                        pose_type, dataset_name, csv_path, dataset, gt, _dt, _timestamps_ns = prepare_dataset(dataset_cfg)
+                        sequence_length = len(dataset)
+                        mode = str(dataset_cfg.get("mode", "fused"))
+                        dataset_type = str(dataset_cfg.get("dataset_type", "synthetic"))
 
-                    result = _run_filter(filter_name, dataset_cfg, filter_cfg, dataset, gt, pose_type)
-                    raw_rows.append(
-                        {
-                            "filter": filter_name,
-                            "dataset_case": dataset_case_name,
-                            "filter_case": filter_case_name,
-                            "trial": trial,
-                            "dataset_seed": dataset_seed,
-                            "dataset_type": dataset_type,
-                            "dataset_name": dataset_name,
-                            "dataset_csv": str(csv_path),
-                            "pose_type": pose_type,
-                            "mode": mode,
-                            "sequence_length": sequence_length,
-                            **result,
-                        }
-                    )
-                    pbar.update(1)
-                    pbar.set_postfix(dataset=dataset_case_name, case=filter_case_name, refresh=False)
+                        filter_cfg = load_yaml(filter_config_path)
+                        _deep_update(filter_cfg, filter_overrides)
+                        _normalize_filter_config_for_pose(filter_name, filter_cfg, pose_type)
+                        align_initialization_with_ground_truth(filter_cfg, gt, pose_type, mode)
+                        if sync_filter_seed and filter_name == "pf":
+                            filter_cfg["seed"] = dataset_seed
 
-    summary_rows = _aggregate_rows(raw_rows)
-    raw_csv = output_dir / f"{filter_name}_per_filter_raw.csv"
-    summary_csv = output_dir / f"{filter_name}_per_filter_summary.csv"
-    _write_csv(raw_csv, raw_rows)
-    _write_csv(summary_csv, summary_rows)
+                        result = _run_filter(filter_name, dataset_cfg, filter_cfg, dataset, gt, pose_type)
+                        raw_rows_all.append(
+                            {
+                                "filter": filter_name,
+                                "dataset_case": dataset_case_name,
+                                "filter_case": filter_case_name,
+                                "trial": trial,
+                                "dataset_seed": dataset_seed,
+                                "dataset_type": dataset_type,
+                                "dataset_name": dataset_name,
+                                "dataset_csv": str(csv_path),
+                                "pose_type": pose_type,
+                                "mode": mode,
+                                "sequence_length": sequence_length,
+                                **result,
+                            }
+                        )
+                        pbar.update(1)
+                        pbar.set_postfix(filter=filter_name, dataset=dataset_case_name, case=filter_case_name, refresh=False)
 
-    print(f"[PerFilterBenchmark] Raw results saved: {raw_csv}")
-    print(f"[PerFilterBenchmark] Summary saved    : {summary_csv}")
-    for row in summary_rows:
-        label = f"{row['dataset_case']}::{row['filter_case']}"
-        print(
-            f"[PerFilterBenchmark] {label:<52} "
-            f"mean_rmse={row['rmse_mean']:>7.4f} "
-            f"std_rmse={row['rmse_std']:>7.4f} "
-            f"mean_runtime={row['runtime_mean']:>6.3f} sec "
-            f"n={int(row['num_trials']):>3d}"
-        )
+    for filter_name in selected_filters:
+        filter_raw_rows = [row for row in raw_rows_all if str(row.get("filter", "")).lower() == filter_name]
+        summary_rows = _aggregate_rows(filter_raw_rows)
+
+        raw_csv = output_dir / f"{filter_name}_per_filter_raw.csv"
+        summary_csv = output_dir / f"{filter_name}_per_filter_summary.csv"
+        _write_csv(raw_csv, filter_raw_rows)
+        _write_csv(summary_csv, summary_rows)
+
+        print(f"[PerFilterBenchmark] Raw results saved: {raw_csv}")
+        print(f"[PerFilterBenchmark] Summary saved    : {summary_csv}")
+        for row in summary_rows:
+            label = f"{row['dataset_case']}::{row['filter_case']}"
+            print(
+                f"[PerFilterBenchmark] {label:<52} "
+                f"mean_rmse={row['rmse_mean']:>7.4f} "
+                f"std_rmse={row['rmse_std']:>7.4f} "
+                f"mean_runtime={row['runtime_mean']:>6.3f} sec "
+                f"n={int(row['num_trials']):>3d}"
+            )
+
+
+def _resolve_filter_names(filter_option: str) -> list[str]:
+    if filter_option == "all":
+        return list(FILTER_EXECUTION_ORDER)
+    if filter_option in DEFAULT_CONFIG_PATHS:
+        return [filter_option]
+    raise ValueError("filter must be one of: ekf, pf, ukf, inekf, all")
 
 
 def _resolve_path(path_like: str | Path) -> Path:
@@ -269,33 +292,33 @@ def _normalize_filter_config_for_pose(filter_name: str, filter_cfg: dict[str, An
 
 
 def _normalize_pf_config_for_pose(filter_cfg: dict[str, Any], pose_type: str) -> None:
-    if pose_type != "3d":
-        return
-
     measurement_cfg = filter_cfg.setdefault("measurement_model", {})
-    position_indices = list(measurement_cfg.get("position_indices", [0, 1]))
-    if len(position_indices) < 3:
-        measurement_cfg["position_indices"] = [0, 1, 2]
+
+    target_dim = 3 if pose_type == "3d" else 2
+    target_indices = [0, 1, 2] if target_dim == 3 else [0, 1]
+    measurement_cfg["position_indices"] = target_indices
 
     measurement_noise = list(measurement_cfg.get("measurement_noise_diag", [0.7, 0.7]))
-    if len(measurement_noise) == 1:
-        measurement_noise = measurement_noise * 3
-    elif len(measurement_noise) == 2:
-        measurement_noise.append(measurement_noise[-1])
-    elif len(measurement_noise) > 3:
-        measurement_noise = measurement_noise[:3]
+    if len(measurement_noise) == 0:
+        measurement_noise = [0.7] * target_dim
+    elif len(measurement_noise) == 1:
+        measurement_noise = measurement_noise * target_dim
+    elif len(measurement_noise) < target_dim:
+        measurement_noise.extend([measurement_noise[-1]] * (target_dim - len(measurement_noise)))
+    elif len(measurement_noise) > target_dim:
+        measurement_noise = measurement_noise[:target_dim]
     measurement_cfg["measurement_noise_diag"] = measurement_noise
 
     outlier_noise = list(measurement_cfg.get("outlier_noise_diag", [4.0, 4.0]))
-    if len(outlier_noise) == 1:
-        outlier_noise = outlier_noise * 3
-    elif len(outlier_noise) == 2:
-        outlier_noise.append(outlier_noise[-1])
-    elif len(outlier_noise) > 3:
-        outlier_noise = outlier_noise[:3]
+    if len(outlier_noise) == 0:
+        outlier_noise = [4.0] * target_dim
+    elif len(outlier_noise) == 1:
+        outlier_noise = outlier_noise * target_dim
+    elif len(outlier_noise) < target_dim:
+        outlier_noise.extend([outlier_noise[-1]] * (target_dim - len(outlier_noise)))
+    elif len(outlier_noise) > target_dim:
+        outlier_noise = outlier_noise[:target_dim]
     measurement_cfg["outlier_noise_diag"] = outlier_noise
-
-
 def _normalize_inekf_config_for_pose(filter_cfg: dict[str, Any], pose_type: str) -> None:
     measurement_cfg = filter_cfg.setdefault("measurement_model", {})
     evaluation_cfg = filter_cfg.setdefault("evaluation", {})
@@ -304,14 +327,14 @@ def _normalize_inekf_config_for_pose(filter_cfg: dict[str, Any], pose_type: str)
     motion_cfg = filter_cfg.setdefault("motion_model", {})
 
     if pose_type != "3d":
-        measurement_cfg.setdefault("position_indices", [0, 1])
+        measurement_cfg["position_indices"] = [0, 1]
         measurement_cfg["measurement_noise_diag"] = _resize_list(
             measurement_cfg.get("measurement_noise_diag", [0.7, 0.7]),
             2,
         )
-        evaluation_cfg.setdefault("position_indices", [0, 1])
-        evaluation_cfg.setdefault("yaw_index", 2)
-        visual_cfg.setdefault("position_indices", [0, 1])
+        evaluation_cfg["position_indices"] = [0, 1]
+        evaluation_cfg["yaw_index"] = 2
+        visual_cfg["position_indices"] = [0, 1]
         init_cfg["mean"] = _resize_list(init_cfg.get("mean", [0.0, 0.0, 0.0]), 3)
         init_cfg["cov_diag"] = _resize_list(init_cfg.get("cov_diag", [1.0, 1.0, 0.3]), 3)
         motion_cfg["process_noise_diag"] = _resize_list(

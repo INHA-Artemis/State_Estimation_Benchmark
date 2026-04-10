@@ -1,12 +1,12 @@
 # Dataset selection and runtime mode.
 dataset_type: synthetic # options: synthetic, euroc, rosbag, m2dgr
 dataset_name: synthetic_test # output/logging name
-pose_type: 6d # options: 2d, 6d
+pose_type: 3d # options: 2d, 3d
 mode: fused # options: imu_only, gnss_only, fused
 
 # Synthetic dataset.
-sequence_length: 500
-dt: 0.1
+sequence_length: 1000
+dt: 0.08
 seed: 10
 generated_csv_path: outputs/synthetic_test.csv
 
@@ -32,8 +32,8 @@ m2dgr_use_gt_as_gnss: true
 
 # Sensor/noise settings.
 use_imu: true
-use_gnss: true
-imu_noise_std: [0.05, 0.02] # 2d: [speed, yaw_rate], 3d/6d: [linear, angular] or 6 axis values
+use_gnss: false
+imu_noise_std: [0.05, 0.02] # 2d: [speed, yaw_rate], 3d: [linear, angular] or 6 axis values
 imu_bias_std: [0.0, 0.0] # fixed per-sequence bias; same shape rule as imu_noise_std
 gnss_noise_std: [0.05, 0.05, 0.05]
 gnss_noise_model: outlier_mixture # options: gaussian, outlier_mixture

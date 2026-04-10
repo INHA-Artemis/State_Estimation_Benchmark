@@ -101,9 +101,9 @@ synthetic control의 yaw_rate amplitude를 키우거나 turning frequency를 높
 - EKF linearization error가 커질 수 있다.
 - InEKF prediction의 midpoint/invariant propagation 차이가 RMSE에 더 잘 반영될 수 있다.
 
-5. 3d 또는 6d 실험
+5. 3d 실험
 
-InEKF의 강점은 rotation, velocity, position이 결합된 Lie group 기반 state propagation에서 더 잘 드러난다. 따라서 2d보다 pose_type 6d, EuRoC, M2DGR 같은 3d scenario가 더 적합하다.
+InEKF의 강점은 rotation, velocity, position이 결합된 Lie group 기반 state propagation에서 더 잘 드러난다. 따라서 2d보다 pose_type 3d, EuRoC, M2DGR 같은 3d scenario가 더 적합하다.
 
 주의할 점:
 
@@ -116,7 +116,7 @@ InEKF의 강점은 rotation, velocity, position이 결합된 Lie group 기반 st
 2. fused + sparse GNSS, 예: GNSS update every 10 steps
 3. fused + sparse GNSS + initial yaw error
 4. aggressive turning synthetic trajectory
-5. 3d/6d real dataset 또는 더 realistic한 IMU kinematics
+5. 3d real dataset 또는 더 realistic한 IMU kinematics
 
 결론
 

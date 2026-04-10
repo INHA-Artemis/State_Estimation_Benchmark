@@ -1,10 +1,27 @@
 import numpy as np
 
 # 상태 벡터 라벨 정의
-# 2d: [x, y, yaw], 3d: [x, y, z, roll, pitch, yaw]
+# 2d: [x, y, yaw]
+# 3d: [p(3), v(3), orientation(roll,pitch,yaw), imu_bias(ba(3), bg(3))]
 STATE_LABELS = {
     "2d": ("x", "y", "yaw"),
-    "3d": ("x", "y", "z", "roll", "pitch", "yaw"),
+    "3d": (
+        "px",
+        "py",
+        "pz",
+        "vx",
+        "vy",
+        "vz",
+        "roll",
+        "pitch",
+        "yaw",
+        "b_ax",
+        "b_ay",
+        "b_az",
+        "b_wx",
+        "b_wy",
+        "b_wz",
+    ),
 }
 
 

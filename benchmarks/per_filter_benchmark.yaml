@@ -1,10 +1,19 @@
-filter: pf
+filter: all
 num_trials: 100
 dataset_seed_start: 10
 sync_filter_seed_with_dataset_seed: true
 output_dir: outputs/benchmarks/per_filter
 
 dataset_cases:
+  # dataset_overrides options (synthetic 기준):
+  # - dataset_type: synthetic | euroc | rosbag | m2dgr
+  # - pose_type: 2d | 3d
+  # - mode: fused | imu_only | gnss_only
+  # - gnss_noise_model: gaussian | outlier_mixture
+  # - gnss_noise_std: [x, y, z]  # 2d에서도 길이 3 유지 권장
+  # - gnss_outlier_prob / gnss_outlier_std: outlier_mixture에서만 사용
+  # 필요하면 dataset_name만 바꿔서 3D 케이스를 추가해도 됩니다.
+
   - name: synthetic_2d_gaussian
     dataset_overrides:
       dataset_type: synthetic
@@ -14,7 +23,7 @@ dataset_cases:
       gnss_noise_std: [0.05, 0.05, 0.05]
       gnss_noise_model: gaussian
 
-  - name: synthetic_2d_outlier
+  - name: synthetic_2d_outlier_mixture
     dataset_overrides:
       dataset_type: synthetic
       dataset_name: synthetic_2d_outlier
@@ -25,66 +34,115 @@ dataset_cases:
       gnss_outlier_prob: 0.1
       gnss_outlier_std: [2.0, 2.0, 2.0]
 
+  - name: synthetic_3d_gaussian
+    dataset_overrides:
+      dataset_type: synthetic
+      dataset_name: synthetic_3d_gaussian
+      pose_type: 3d
+      mode: fused
+      gnss_noise_std: [0.05, 0.05, 0.05]
+      gnss_noise_model: gaussian
+
+  - name: synthetic_3d_outlier_mixture
+    dataset_overrides:
+      dataset_type: synthetic
+      dataset_name: synthetic_3d_outlier
+      pose_type: 3d
+      mode: fused
+      gnss_noise_std: [0.05, 0.05, 0.05]
+      gnss_noise_model: outlier_mixture
+      gnss_outlier_prob: 0.1
+      gnss_outlier_std: [2.0, 2.0, 2.0]
+
+  # Example 3D case (필요 시 주석 해제 후 사용):
+  # - name: synthetic_3d_gaussian
+  #   dataset_overrides:
+  #     dataset_type: synthetic
+  #     dataset_name: synthetic_3d_gaussian
+  #     pose_type: 3d
+  #     mode: fused
+  #     gnss_noise_std: [0.05, 0.05, 0.05]
+  #     gnss_noise_model: gaussian
 pf_cases:
-  - name: pf_1000_gaussian_w005_n4
+  - name: pf_10000_gaussian_w005_n4
     filter_overrides:
-      num_particles: 1000
+      num_particles: 10000
       resample_threshold_ratio: 0.5
       resampling_method: systematic
       measurement_model:
         likelihood_model: gaussian
         outlier_weight: 0.05
-        outlier_noise_diag: [4.0, 4.0]
+        outlier_noise_diag: [4.0, 4.0, 4.0]
 
-  - name: pf_3000_gmm_w005_n4
+  - name: pf_20000_gmm_w005_n4
     filter_overrides:
-      num_particles: 3000
+      num_particles: 20000
       resample_threshold_ratio: 0.5
       resampling_method: systematic
       measurement_model:
         likelihood_model: gaussian_mixture
         outlier_weight: 0.05
-        outlier_noise_diag: [4.0, 4.0]
+        outlier_noise_diag: [4.0, 4.0, 4.0]
 
-  - name: pf_3000_gmm_w010_n4
+  - name: pf_10000_gmm_w005_n4
     filter_overrides:
-      num_particles: 3000
-      resample_threshold_ratio: 0.5
-      resampling_method: systematic
-      measurement_model:
-        likelihood_model: gaussian_mixture
-        outlier_weight: 0.10
-        outlier_noise_diag: [4.0, 4.0]
-
-  - name: pf_3000_gmm_w005_n9
-    filter_overrides:
-      num_particles: 3000
+      num_particles: 10000
       resample_threshold_ratio: 0.5
       resampling_method: systematic
       measurement_model:
         likelihood_model: gaussian_mixture
         outlier_weight: 0.05
-        outlier_noise_diag: [9.0, 9.0]
+        outlier_noise_diag: [4.0, 4.0, 4.0]
 
-  - name: pf_3000_gmm_w010_n9
+  - name: pf_10000_gmm_w010_n4
     filter_overrides:
-      num_particles: 3000
+      num_particles: 10000
       resample_threshold_ratio: 0.5
       resampling_method: systematic
       measurement_model:
         likelihood_model: gaussian_mixture
         outlier_weight: 0.10
-        outlier_noise_diag: [9.0, 9.0]
+        outlier_noise_diag: [4.0, 4.0, 4.0]
 
-  - name: pf_3000_gmm_w020_n16
+  - name: pf_10000_gmm_w005_n9
     filter_overrides:
-      num_particles: 3000
+      num_particles: 10000
+      resample_threshold_ratio: 0.5
+      resampling_method: systematic
+      measurement_model:
+        likelihood_model: gaussian_mixture
+        outlier_weight: 0.05
+        outlier_noise_diag: [9.0, 9.0, 9.0]
+
+  - name: pf_10000_gmm_w010_n9
+    filter_overrides:
+      num_particles: 10000
+      resample_threshold_ratio: 0.5
+      resampling_method: systematic
+      measurement_model:
+        likelihood_model: gaussian_mixture
+        outlier_weight: 0.10
+        outlier_noise_diag: [9.0, 9.0, 9.0]
+
+  - name: pf_10000_gmm_w020_n16
+    filter_overrides:
+      num_particles: 10000
       resample_threshold_ratio: 0.5
       resampling_method: systematic
       measurement_model:
         likelihood_model: gaussian_mixture
         outlier_weight: 0.20
-        outlier_noise_diag: [16.0, 16.0]
+        outlier_noise_diag: [16.0, 16.0, 16.0]
+
+  - name: pf_5000_gmm_w005_n4
+    filter_overrides:
+      num_particles: 5000
+      resample_threshold_ratio: 0.5
+      resampling_method: systematic
+      measurement_model:
+        likelihood_model: gaussian_mixture
+        outlier_weight: 0.05
+        outlier_noise_diag: [4.0, 4.0, 4.0]
 
 ukf_cases:
   - name: ukf_default_config_noise
