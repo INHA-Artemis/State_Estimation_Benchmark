@@ -192,8 +192,11 @@ def _build_measurements(
     if bool(dataset_cfg.get("m2dgr_use_gt_as_gnss", False)):
         return build_noisy_position_measurements(gt, dataset_cfg, "m2dgr_use_gt_as_gnss", default_enabled=False)
 
-    gnss_indices = nearest_indices(gnss_timestamps, gt_timestamps)
-    return gnss_measurements[gnss_indices]
+    measurements = np.full((len(gt_timestamps), 3), np.nan, dtype=float)
+    gt_indices = nearest_indices(gt_timestamps, gnss_timestamps)
+    valid = (gt_indices >= 0) & (gt_indices < len(gt_timestamps))
+    measurements[gt_indices[valid]] = gnss_measurements[valid]
+    return measurements
 
 
 def _lla_to_ecef(lat_deg: float, lon_deg: float, alt: float) -> np.ndarray:

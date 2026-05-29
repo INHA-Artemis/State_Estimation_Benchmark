@@ -39,6 +39,10 @@ class InvariantKalmanFilter15D:
         self.rotation_input_type = str(motion_cfg.get("rotation_input_type", "rate"))
         self.rotation_representation = str(motion_cfg.get("rotation_representation", "rotvec"))
         self.velocity_blend = float(motion_cfg.get("velocity_blend", 0.0))
+        self.update_biases = bool(motion_cfg.get("update_biases", True))
+        self.covariance_floor = float(motion_cfg.get("covariance_floor", 1.0e-12))
+        self.covariance_ceiling = float(motion_cfg.get("covariance_ceiling", 1.0e6))
+        self.max_delta_norm = float(motion_cfg.get("max_delta_norm", 100.0))
         self.gravity = np.asarray(motion_cfg.get("gravity", [0.0, 0.0, -9.81]), dtype=float).reshape(3)
         self.process_noise_diag = fit_diag(
             motion_cfg.get(
@@ -112,8 +116,10 @@ class InvariantKalmanFilter15D:
 
         R_prev = self.Rot
         v_prev = self.v.copy()
-        w = u[3:6] - self.gyro_bias
-        a = u[0:3] - self.accel_bias
+        use_accel_bias = self.translation_input_type == "acceleration"
+        use_gyro_bias = self.use_imu_rotation and self.rotation_input_type == "rate"
+        w = u[3:6] - self.gyro_bias if use_gyro_bias else u[3:6]
+        a = u[0:3] - self.accel_bias if use_accel_bias else u[0:3]
         phi = w * dt
         G1 = lie.so3_left_jacobian(phi)
         G2 = _gamma2(phi)
@@ -165,16 +171,19 @@ class InvariantKalmanFilter15D:
         A = np.zeros((self.error_dim, self.error_dim), dtype=float)
         A[0:3, 0:3] = -lie.skew(w)
         A[0:3, 9:12] = -np.eye(3)
-        A[3:6, 0:3] = -lie.skew(a)
-        A[3:6, 3:6] = -lie.skew(w)
-        A[3:6, 12:15] = -np.eye(3)
+        if self.translation_input_type == "acceleration":
+            A[3:6, 0:3] = -lie.skew(a)
+            A[3:6, 3:6] = -lie.skew(w)
+        if use_accel_bias:
+            A[3:6, 12:15] = -np.eye(3)
         A[6:9, 3:6] = np.eye(3)
-        A[6:9, 6:9] = -lie.skew(w)
+        if self.translation_input_type == "acceleration":
+            A[6:9, 6:9] = -lie.skew(w)
 
         self.Phi = _matrix_exp(A * dt)
         self.Q = diagonal_covariance(self.process_noise_diag)
         predicted = self.Phi @ self.P @ self.Phi.T + self.Phi @ self.Q @ self.Phi.T * max(dt, 1e-9)
-        self.P = 0.5 * (predicted + predicted.T)
+        self.P = self._stabilize_covariance(predicted)
         self.X = lie.as_matrix(self.Rot, self.v, self.p)
         return self.estimate_pose()
 
@@ -192,13 +201,19 @@ class InvariantKalmanFilter15D:
         _, P_update, self.innovation, self.S, self.K = kalman_update(
             np.zeros(self.error_dim, dtype=float), self.P, self.innovation, self.H, self.Rm
         )
-        self.delta = self.K @ self.innovation
-        dX = lie.se23_exp(self.delta[:9])
-        self.Rot, self.v, self.p = lie.from_matrix(dX @ lie.as_matrix(self.Rot, self.v, self.p))
-        self.gyro_bias = self.gyro_bias + self.delta[9:12]
-        self.accel_bias = self.accel_bias + self.delta[12:15]
+        self.delta = self._bounded_delta(self.K @ self.innovation)
+        if self.translation_input_type == "velocity" or not self.update_biases:
+            self.v = self.v + self.delta[3:6]
+            self.p = self.p + self.delta[6:9]
+        else:
+            dX = lie.se23_exp(self.delta[:9])
+            self.Rot, self.v, self.p = lie.from_matrix(dX @ lie.as_matrix(self.Rot, self.v, self.p))
+        if self.update_biases and self.use_imu_rotation and self.rotation_input_type == "rate":
+            self.gyro_bias = self.gyro_bias + self.delta[9:12]
+        if self.update_biases and self.translation_input_type == "acceleration":
+            self.accel_bias = self.accel_bias + self.delta[12:15]
         self.X = lie.as_matrix(self.Rot, self.v, self.p)
-        self.P = 0.5 * (P_update + P_update.T)
+        self.P = self._stabilize_covariance(P_update)
         return self.estimate_pose()
 
     def velocity_update(self, measurement: Iterable[float] | None) -> np.ndarray:
@@ -221,13 +236,19 @@ class InvariantKalmanFilter15D:
         _, P_update, self.innovation, self.S, self.K = kalman_update(
             np.zeros(self.error_dim, dtype=float), self.P, self.innovation, H, Rm
         )
-        self.delta = self.K @ self.innovation
-        dX = lie.se23_exp(self.delta[:9])
-        self.Rot, self.v, self.p = lie.from_matrix(dX @ lie.as_matrix(self.Rot, self.v, self.p))
-        self.gyro_bias = self.gyro_bias + self.delta[9:12]
-        self.accel_bias = self.accel_bias + self.delta[12:15]
+        self.delta = self._bounded_delta(self.K @ self.innovation)
+        if self.translation_input_type == "velocity" or not self.update_biases:
+            self.v = self.v + self.delta[3:6]
+            self.p = self.p + self.delta[6:9]
+        else:
+            dX = lie.se23_exp(self.delta[:9])
+            self.Rot, self.v, self.p = lie.from_matrix(dX @ lie.as_matrix(self.Rot, self.v, self.p))
+        if self.update_biases and self.use_imu_rotation and self.rotation_input_type == "rate":
+            self.gyro_bias = self.gyro_bias + self.delta[9:12]
+        if self.update_biases and self.translation_input_type == "acceleration":
+            self.accel_bias = self.accel_bias + self.delta[12:15]
         self.X = lie.as_matrix(self.Rot, self.v, self.p)
-        self.P = 0.5 * (P_update + P_update.T)
+        self.P = self._stabilize_covariance(P_update)
         return self.estimate_pose()
 
     def step(
@@ -258,6 +279,25 @@ class InvariantKalmanFilter15D:
             return False
         maha = float(self.innovation.T @ np.linalg.solve(self.S, self.innovation))
         return maha > self.mahalanobis_gate
+
+    def _bounded_delta(self, delta: np.ndarray) -> np.ndarray:
+        delta = np.nan_to_num(np.asarray(delta, dtype=float).reshape(self.error_dim), nan=0.0, posinf=0.0, neginf=0.0)
+        norm = float(np.linalg.norm(delta))
+        if self.max_delta_norm > 0.0 and norm > self.max_delta_norm:
+            delta = delta * (self.max_delta_norm / norm)
+        return delta
+
+    def _stabilize_covariance(self, covariance: np.ndarray) -> np.ndarray:
+        cov = np.nan_to_num(np.asarray(covariance, dtype=float), nan=self.covariance_ceiling, posinf=self.covariance_ceiling, neginf=0.0)
+        cov = 0.5 * (cov + cov.T)
+        try:
+            eigvals, eigvecs = np.linalg.eigh(cov)
+            eigvals = np.clip(eigvals, self.covariance_floor, self.covariance_ceiling)
+            cov = (eigvecs * eigvals) @ eigvecs.T
+        except np.linalg.LinAlgError:
+            diag = np.clip(np.diag(cov), self.covariance_floor, self.covariance_ceiling)
+            cov = np.diag(diag)
+        return 0.5 * (cov + cov.T)
 
 
 def _gamma2(phi: np.ndarray) -> np.ndarray:

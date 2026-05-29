@@ -100,17 +100,20 @@ def main() -> None:
 
 
 def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict:
+    mode = "imu_only"
+    if args.use_pseudo_position_measurement:
+        mode = (
+            "fused"
+            if args.dataset_type == "m2dgr"
+            else f"fused_sampled_{max(1, int(args.pseudo_position_stride))}_{max(0, int(args.pseudo_position_offset))}"
+        )
     common_cfg = {
         "dataset_name": args.dataset_name,
         "pose_type": "3d",
-        "mode": (
-            f"fused_sampled_{max(1, int(args.pseudo_position_stride))}_{max(0, int(args.pseudo_position_offset))}"
-            if args.use_pseudo_position_measurement
-            else "imu_only"
-        ),
+        "mode": mode,
         "generated_csv_path": str(output_dir / f"{args.dataset_name}_dataset.csv"),
         "use_imu": True,
-        "use_gnss": False,
+        "use_gnss": args.dataset_type == "m2dgr",
         "use_position_measurement": bool(args.use_pseudo_position_measurement),
         "position_measurement_noise_model": "gaussian",
         "position_measurement_noise_std": list(args.position_measurement_noise_std),
@@ -128,7 +131,8 @@ def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict:
             "m2dgr_imu_topic": args.imu_topic,
             "m2dgr_gnss_topic": args.gnss_topic,
             "m2dgr_linear_source": args.linear_source,
-            "m2dgr_use_gt_as_gnss": bool(args.use_pseudo_position_measurement),
+            "m2dgr_use_gt_as_gnss": False,
+            "measurement_source": "real_gnss_ublox_fix",
         }
     return {
         **common_cfg,

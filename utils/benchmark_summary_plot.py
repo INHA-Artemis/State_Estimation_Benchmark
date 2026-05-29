@@ -441,16 +441,7 @@ def _normalize_pf_repeat_dataset(value: str) -> str:
 
 
 def _metric_yerr(run_rows: list[dict[str, Any]], field: str) -> np.ndarray | None:
-    if field == "rmse_position":
-        key = "rmse_error"
-    elif field == "runtime_sec":
-        key = "runtime_error"
-    else:
-        return None
-    errors = np.asarray([_float_or_nan(row.get(key)) for row in run_rows], dtype=float)
-    if not np.any(np.isfinite(errors) & (errors > 0.0)):
-        return None
-    return np.where(np.isfinite(errors) & (errors > 0.0), errors, 0.0)
+    return None
 
 
 def _annotation_tops(values: np.ndarray, yerr: np.ndarray | None) -> np.ndarray:

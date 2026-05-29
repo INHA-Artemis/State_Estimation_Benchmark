@@ -27,7 +27,7 @@ dataset:
   gt_txt: datasets/M2DGR/street_02.txt
   imu_topic: /handsfree/imu
   gnss_topic: /ublox/fix
-  linear_source: gt_velocity
+  linear_source: accel
 
 kalman_filter:
   filter:

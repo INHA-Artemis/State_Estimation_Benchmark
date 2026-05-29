@@ -114,11 +114,13 @@ def export_drift_input(
     dataset: list[dict],
     gt: np.ndarray,
     timestamps_ns: np.ndarray,
+    *,
+    use_sample_velocity: bool = False,
 ) -> Path:
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     gt = _as_2d(gt, 6)
     timestamps_ns = _timestamps_ns_full(timestamps_ns, len(dataset))
-    velocities = _estimate_world_velocity(timestamps_ns, gt[:, 0:3])
+    velocities = None if use_sample_velocity else _estimate_world_velocity(timestamps_ns, gt[:, 0:3])
     accel_bias = _estimate_initial_accel_bias(dataset)
 
     fieldnames = [
@@ -140,6 +142,7 @@ def export_drift_input(
         "pos_x",
         "pos_y",
         "pos_z",
+        "has_velocity",
         "vel_x",
         "vel_y",
         "vel_z",
@@ -160,6 +163,13 @@ def export_drift_input(
             measurement = sample.get("measurement")
             has_position = measurement is not None
             position = np.asarray(measurement if has_position else [np.nan, np.nan, np.nan], dtype=float).reshape(3)
+            velocity_measurement = sample.get("velocity_measurement")
+            has_velocity = velocity_measurement is not None
+            velocity = np.asarray(
+                velocity_measurement if has_velocity else (velocities[idx] if velocities is not None else [np.nan, np.nan, np.nan]),
+                dtype=float,
+            ).reshape(3)
+            has_velocity = bool(has_velocity or velocities is not None)
             writer.writerow(
                 {
                     "seq": idx,
@@ -180,9 +190,10 @@ def export_drift_input(
                     "pos_x": float(position[0]),
                     "pos_y": float(position[1]),
                     "pos_z": float(position[2]),
-                    "vel_x": float(velocities[idx, 0]),
-                    "vel_y": float(velocities[idx, 1]),
-                    "vel_z": float(velocities[idx, 2]),
+                    "has_velocity": int(has_velocity and np.all(np.isfinite(velocity))),
+                    "vel_x": float(velocity[0]),
+                    "vel_y": float(velocity[1]),
+                    "vel_z": float(velocity[2]),
                     "gt_x": float(gt[idx, 0]),
                     "gt_y": float(gt[idx, 1]),
                     "gt_z": float(gt[idx, 2]),

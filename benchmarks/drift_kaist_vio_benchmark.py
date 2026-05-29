@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from rosbags.highlevel import AnyReader
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COMPARE_REPO = PROJECT_ROOT / "compare_repos" / "drift"
@@ -21,6 +22,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from utils.cpp_repo_exporters import export_drift_input
 from utils.benchmark_config import apply_benchmark_dataset_config, dataset_run_slug, default_benchmark_output_root
+from utils.dataset_loader_utils import message_timestamp_ns, nearest_indices
 from utils.prepare_dataset import prepare_dataset
 from utils.yaml_loader import load_yaml
 from filters.invariant_kalman_filter import InvariantKalmanFilter
@@ -55,6 +57,7 @@ def main() -> None:
     parser.add_argument("--gt-topic", default=None)
     parser.add_argument("--gt-txt", default=None)
     parser.add_argument("--gnss-topic", default=None)
+    parser.add_argument("--velocity-topic", default="/ublox/fix_velocity")
     parser.add_argument("--linear-source", default=None, choices=["gt_velocity", "accel"])
     measurement_group = parser.add_mutually_exclusive_group()
     measurement_group.add_argument("--use-pseudo-position-measurement", dest="use_pseudo_position_measurement", action="store_true", default=True)
@@ -106,21 +109,33 @@ def main() -> None:
             dt = dt[: args.max_steps]
     _initialize_our_inekf_from_gt(compare_cfg, gt, dataset, args)
 
+    use_gt_velocity_measurements = str(args.linear_source).strip().lower() == "gt_velocity"
+    real_velocity_measurements = None
+    if args.dataset_type == "m2dgr" and not use_gt_velocity_measurements:
+        real_velocity_measurements = _load_m2dgr_velocity_measurements(Path(args.bag), args.velocity_topic, timestamps_ns)
+    use_velocity_measurements = use_gt_velocity_measurements or real_velocity_measurements is not None
     velocity_dataset = _with_velocity_measurements(
         dataset,
         gt,
         timestamps_ns,
-        args.use_pseudo_position_measurement,
+        use_velocity_measurements,
         args.linear_source,
+        velocity_measurements=real_velocity_measurements,
     )
     filter_input_csv = _write_filter_input_csv(output_dir / "filter_inputs" / "our_inekf_9d_velocity.csv", velocity_dataset, gt, timestamps_ns)
     filter_input_15d_csv = _write_filter_input_csv(output_dir / "filter_inputs" / "our_inekf_15d_velocity.csv", velocity_dataset, gt, timestamps_ns)
-    input_csv = export_drift_input(output_dir / "repo_inputs" / "drift.csv", dataset, gt, timestamps_ns)
+    input_csv = output_dir / "repo_inputs" / "drift.csv"
+    if use_velocity_measurements:
+        input_csv = export_drift_input(input_csv, velocity_dataset, gt, timestamps_ns, use_sample_velocity=True)
     estimates_csv = output_dir / "drift_estimates.csv"
     results = [
         _run_our_inekf(compare_cfg, _estimator_dataset_config(dataset_cfg), velocity_dataset, gt, filter_input_csv),
         _run_our_inekf_15d(compare_cfg, _estimator_dataset_config(dataset_cfg), velocity_dataset, gt, filter_input_15d_csv),
-        _run_drift(args, input_csv, estimates_csv, gt),
+        (
+            _run_drift(args, input_csv, estimates_csv, gt)
+            if use_velocity_measurements
+            else _skipped(len(gt), "disabled because the DRIFT runner requires velocity correction and no real velocity topic was available")
+        ),
     ]
 
     results_csv = output_dir / "drift_kaist_vio_results.csv"
@@ -187,6 +202,7 @@ def _run_our_inekf_once(
         covariances = []
         for sample in dataset:
             estimator.predict(sample.get("control"), float(sample.get("dt", 1.0)))
+            estimator.measurement_update(sample.get("measurement"))
             estimator.velocity_update(sample.get("velocity_measurement"))
             estimates.append(estimator.estimate_pose())
             covariances.append(_position_covariance(estimator))
@@ -228,6 +244,7 @@ def _run_our_inekf_15d_once(
         covariances = []
         for sample in dataset:
             estimator.predict(sample.get("control"), float(sample.get("dt", 1.0)))
+            estimator.measurement_update(sample.get("measurement"))
             estimator.velocity_update(sample.get("velocity_measurement"))
             estimates.append(estimator.estimate_pose())
             covariances.append(_position_covariance(estimator))
@@ -251,14 +268,23 @@ def _run_body_frame_with_comparison(
         candidate_cfg = _compare_config_with_translation_frame(compare_cfg, config_key, frame)
         candidates.append((frame, run_candidate(candidate_cfg)))
 
-    body_result = next((result for frame, result in candidates if frame == "body"), None)
-    if body_result is None:
+    ok_candidates = [
+        (frame, result)
+        for frame, result in candidates
+        if result.status == "ok" and result.rmse_position is not None and np.isfinite(result.rmse_position)
+    ]
+    selected_frame, selected_result = (
+        min(ok_candidates, key=lambda item: float(item[1].rmse_position))
+        if ok_candidates
+        else (None, None)
+    )
+    if selected_result is None:
         family, implementation, algorithm = result_identity
-        notes = _frame_comparison_notes("body", candidates)
+        notes = _frame_comparison_notes("none", candidates)
         return BenchmarkResult(family, implementation, algorithm, "skipped", None, None, None, candidates[0][1].steps if candidates else 0, notes)
 
-    body_result.notes = _frame_comparison_notes("body", candidates)
-    return body_result
+    selected_result.notes = _frame_comparison_notes(str(selected_frame), candidates)
+    return selected_result
 
 
 def _compare_config_with_translation_frame(compare_cfg: dict[str, Any], config_key: str, frame: str) -> dict[str, Any]:
@@ -274,7 +300,8 @@ def _frame_comparison_notes(benchmark_frame: str, candidates: list[tuple[str, Be
         if result.status == "ok" and result.rmse_position is not None:
             details.append(f"{frame} rmse={result.rmse_position:.6g}")
         else:
-            details.append(f"{frame} {result.status}")
+            suffix = f" ({result.notes})" if result.notes else ""
+            details.append(f"{frame} {result.status}{suffix}")
     return f"benchmark_frame={benchmark_frame}; comparison: " + ", ".join(details)
 
 
@@ -330,17 +357,20 @@ def _resolve_runner(configured: str) -> Path | None:
 
 
 def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
+    mode = "imu_only"
+    if args.use_pseudo_position_measurement:
+        mode = (
+            "fused"
+            if args.dataset_type == "m2dgr"
+            else f"fused_sampled_{max(1, int(args.pseudo_position_stride))}_{max(0, int(args.pseudo_position_offset))}"
+        )
     common_cfg = {
         "dataset_name": args.dataset_name,
         "pose_type": "3d",
-        "mode": (
-            f"fused_sampled_{max(1, int(args.pseudo_position_stride))}_{max(0, int(args.pseudo_position_offset))}"
-            if args.use_pseudo_position_measurement
-            else "imu_only"
-        ),
+        "mode": mode,
         "generated_csv_path": str(output_dir / f"{args.dataset_name}_dataset.csv"),
         "use_imu": True,
-        "use_gnss": False,
+        "use_gnss": args.dataset_type == "m2dgr",
         "use_position_measurement": bool(args.use_pseudo_position_measurement),
         "position_measurement_noise_model": "gaussian",
         "position_measurement_noise_std": list(args.position_measurement_noise_std),
@@ -358,7 +388,8 @@ def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[st
             "m2dgr_imu_topic": args.imu_topic,
             "m2dgr_gnss_topic": args.gnss_topic,
             "m2dgr_linear_source": args.linear_source,
-            "m2dgr_use_gt_as_gnss": bool(args.use_pseudo_position_measurement),
+            "m2dgr_use_gt_as_gnss": False,
+            "measurement_source": "real_gnss_ublox_fix",
         }
     return {
         **common_cfg,
@@ -382,10 +413,12 @@ def _estimator_dataset_config(dataset_cfg: dict[str, Any]) -> dict[str, Any]:
 
 def _effective_compare_config(compare_cfg: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     cfg = copy.deepcopy(compare_cfg)
-    measurement_variance = np.square(np.asarray(args.velocity_measurement_noise_std, dtype=float)).tolist()
+    uses_velocity_correction = str(args.linear_source).strip().lower() == "gt_velocity" or args.dataset_type == "m2dgr"
+    measurement_std = args.velocity_measurement_noise_std if uses_velocity_correction else args.position_measurement_noise_std
+    measurement_variance = np.square(np.asarray(measurement_std, dtype=float)).tolist()
     inekf_cfg = cfg.setdefault("invariant_kalman_filter", {})
     motion_cfg = inekf_cfg.setdefault("motion_model", {})
-    if args.linear_source == "gt_velocity":
+    if str(args.linear_source).strip().lower() == "gt_velocity":
         motion_cfg["translation_input_type"] = "velocity"
     meas_cfg = inekf_cfg.setdefault("measurement_model", {})
     meas_cfg["measurement_noise_diag"] = measurement_variance
@@ -427,6 +460,10 @@ def _effective_compare_config(compare_cfg: dict[str, Any], args: argparse.Namesp
         1.0e-6,
         1.0e-6,
     ]
+    if args.dataset_type == "m2dgr" and str(args.linear_source).strip().lower() != "gt_velocity":
+        inekf_15d_cfg["motion_model"]["update_biases"] = False
+        inekf_15d_cfg["motion_model"]["covariance_ceiling"] = 1.0e4
+        inekf_15d_cfg["motion_model"]["max_delta_norm"] = 20.0
     inekf_15d_cfg["measurement_model"]["measurement_noise_diag"] = measurement_variance
     cfg["invariant_kalman_filter_15d"] = inekf_15d_cfg
     return cfg
@@ -463,8 +500,16 @@ def _with_velocity_measurements(
     timestamps_ns: np.ndarray,
     enabled: bool,
     linear_source: str,
+    *,
+    velocity_measurements: np.ndarray | None = None,
 ) -> list[dict]:
-    velocities = _estimate_world_velocity(timestamps_ns, np.asarray(gt, dtype=float)[:, 0:3])
+    velocities = None
+    if enabled:
+        velocities = (
+            np.asarray(velocity_measurements, dtype=float)
+            if velocity_measurements is not None
+            else _estimate_world_velocity(timestamps_ns, np.asarray(gt, dtype=float)[:, 0:3])
+        )
     use_accel_bias = str(linear_source).strip().lower() == "accel"
     accel_bias = _estimate_initial_accel_bias(dataset) if use_accel_bias else np.zeros(3, dtype=float)
     copied_dataset: list[dict] = []
@@ -477,9 +522,50 @@ def _with_velocity_measurements(
         corrected_control[0:3] = corrected_control[0:3] - accel_bias
         copied["control"] = corrected_control
         copied["raw_control"] = corrected_control
-        copied["velocity_measurement"] = velocities[idx] if enabled else None
+        velocity = velocities[idx] if velocities is not None else None
+        copied["velocity_measurement"] = velocity if velocity is not None and np.all(np.isfinite(velocity)) else None
         copied_dataset.append(copied)
     return copied_dataset
+
+
+def _load_m2dgr_velocity_measurements(
+    bag_path: Path,
+    velocity_topic: str,
+    timestamps_ns: np.ndarray,
+) -> np.ndarray | None:
+    if not velocity_topic:
+        return None
+    bag_path = Path(bag_path)
+    if not bag_path.exists():
+        return None
+
+    velocity_timestamps: list[int] = []
+    velocity_rows: list[list[float]] = []
+    with AnyReader([bag_path]) as reader:
+        connections = [connection for connection in reader.connections if connection.topic == velocity_topic]
+        if not connections:
+            return None
+        for connection, timestamp, rawdata in reader.messages(connections=connections):
+            msg = reader.deserialize(rawdata, connection.msgtype)
+            velocity_timestamps.append(message_timestamp_ns(msg, timestamp))
+            velocity_rows.append(
+                [
+                    float(msg.twist.twist.linear.x),
+                    float(msg.twist.twist.linear.y),
+                    float(msg.twist.twist.linear.z),
+                ]
+            )
+
+    if not velocity_timestamps:
+        return None
+
+    velocity_timestamps_np = np.asarray(velocity_timestamps, dtype=np.int64)
+    velocity_rows_np = np.asarray(velocity_rows, dtype=float)
+    measurements = np.full((len(timestamps_ns), 3), np.nan, dtype=float)
+    gt_indices = nearest_indices(np.asarray(timestamps_ns, dtype=np.int64), velocity_timestamps_np)
+    valid = (gt_indices >= 0) & (gt_indices < len(measurements))
+    measurements[gt_indices[valid]] = velocity_rows_np[valid]
+    return measurements
 
 
 def _estimate_initial_accel_bias(dataset: list[dict], window: int = 200) -> np.ndarray:
@@ -693,6 +779,12 @@ def _write_metadata(
     metric_plot_paths: list[str],
     animation_outputs: dict[str, dict[str, str]],
 ) -> None:
+    if str(args.linear_source).strip().lower() == "gt_velocity":
+        comparison_measurement = "gt_derived_world_velocity"
+    elif args.dataset_type == "m2dgr":
+        comparison_measurement = "real_gnss_position_and_fix_velocity"
+    else:
+        comparison_measurement = "position_only_no_velocity"
     data = {
         "dataset_name": dataset_name,
         "dataset_csv": str(dataset_csv),
@@ -705,7 +797,7 @@ def _write_metadata(
         "runner": str(args.runner),
         "run_mode": "fused" if args.use_pseudo_position_measurement else "imu_only",
         "linear_source": args.linear_source,
-        "comparison_measurement": "gt_derived_world_velocity",
+        "comparison_measurement": comparison_measurement,
         "use_pseudo_position_measurement": bool(args.use_pseudo_position_measurement),
         "pseudo_position_stride": max(1, int(args.pseudo_position_stride)),
         "pseudo_position_offset": max(0, int(args.pseudo_position_offset)),

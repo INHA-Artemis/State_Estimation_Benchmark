@@ -194,7 +194,9 @@ def main() -> None:
     print(f"[FilterPyBenchmark] Steps       : {len(gt)}")
     measurement_updates = sum(1 for sample in dataset if sample.get("measurement") is not None)
     print(f"[FilterPyBenchmark] Updates     : {measurement_updates}/{len(dataset)} position measurements")
-    if args.use_pseudo_position_measurement:
+    if args.use_pseudo_position_measurement and args.dataset_type == "m2dgr":
+        print(f"[FilterPyBenchmark] Measurement : real GNSS topic {args.gnss_topic}")
+    elif args.use_pseudo_position_measurement:
         print(
             "[FilterPyBenchmark] Measurement : GT-sampled pseudo-position "
             f"(stride={max(1, args.pseudo_position_stride)}, not real GNSS)"
@@ -232,18 +234,29 @@ def _run_output_slug(args: argparse.Namespace) -> str:
     return dataset_run_slug(args.bag, args.dataset_name, args.dataset_type)
 
 
+def _measurement_source(args: argparse.Namespace) -> str:
+    if not args.use_pseudo_position_measurement:
+        return "none_imu_only"
+    if args.dataset_type == "m2dgr":
+        return "real_gnss_ublox_fix"
+    return "gt_sampled_pseudo_position_not_real_gnss"
+
+
 def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
+    mode = "imu_only"
+    if args.use_pseudo_position_measurement:
+        mode = (
+            "fused"
+            if args.dataset_type == "m2dgr"
+            else f"fused_sampled_{max(1, int(args.pseudo_position_stride))}_{max(0, int(args.pseudo_position_offset))}"
+        )
     common_cfg = {
         "dataset_name": args.dataset_name,
         "pose_type": "3d",
-        "mode": (
-            f"fused_sampled_{max(1, int(args.pseudo_position_stride))}_{max(0, int(args.pseudo_position_offset))}"
-            if args.use_pseudo_position_measurement
-            else "imu_only"
-        ),
+        "mode": mode,
         "generated_csv_path": str(output_dir / f"{args.dataset_name}_dataset.csv"),
         "use_imu": True,
-        "use_gnss": False,
+        "use_gnss": args.dataset_type == "m2dgr",
         "use_position_measurement": bool(args.use_pseudo_position_measurement),
         "position_measurement_noise_model": "gaussian",
         "position_measurement_noise_std": list(args.position_measurement_noise_std),
@@ -261,7 +274,8 @@ def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[st
             "m2dgr_imu_topic": args.imu_topic,
             "m2dgr_gnss_topic": args.gnss_topic,
             "m2dgr_linear_source": args.linear_source,
-            "m2dgr_use_gt_as_gnss": bool(args.use_pseudo_position_measurement),
+            "m2dgr_use_gt_as_gnss": False,
+            "measurement_source": "real_gnss_ublox_fix",
         }
     return {
         **common_cfg,
@@ -271,11 +285,7 @@ def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[st
         "rosbag_gt_topic": args.gt_topic,
         "rosbag_linear_source": args.linear_source,
         "rosbag_use_gt_as_position_measurement": bool(args.use_pseudo_position_measurement),
-        "measurement_source": (
-            "gt_sampled_pseudo_position_not_real_gnss"
-            if args.use_pseudo_position_measurement
-            else "none_imu_only"
-        ),
+        "measurement_source": _measurement_source(args),
         "pseudo_position_stride": max(1, int(args.pseudo_position_stride)),
         "pseudo_position_offset": max(0, int(args.pseudo_position_offset)),
     }
@@ -295,6 +305,11 @@ def _effective_compare_config(compare_cfg: dict[str, Any], args: argparse.Namesp
     for key in ("kalman_filter", "extended_kalman_filter", "unscented_kalman_filter"):
         meas_cfg = cfg.setdefault(key, {}).setdefault("measurement_model", {})
         meas_cfg["measurement_noise_diag"] = measurement_variance
+        if args.linear_source == "gt_velocity":
+            motion_cfg = cfg.setdefault(key, {}).setdefault("motion_model", {})
+            motion_cfg["control_input_type"] = "none"
+            motion_cfg["accel_bias"] = [0.0, 0.0, 0.0]
+            motion_cfg["gravity"] = [0.0, 0.0, 0.0]
 
     return cfg
 

@@ -145,6 +145,9 @@ def load_dataset_from_csv(csv_path: Path, pose_type: str, mode: str) -> tuple[li
                     dtype=float,
                 )
 
+            if not np.all(np.isfinite(measurement)):
+                measurement = None
+
             dataset.append(
                 {
                     "control": None if mode == "gnss_only" else control,

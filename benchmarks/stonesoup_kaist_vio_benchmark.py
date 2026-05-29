@@ -126,6 +126,7 @@ def main() -> None:
         help="Disable 3D covariance ellipsoids in trajectory MP4s.",
     )
     parser.add_argument("--skip-stonesoup", action="store_true")
+    parser.add_argument("--skip-pf", action="store_true", help="Skip PF runs and only benchmark EKF/UKF.")
     args = parser.parse_args()
 
     compare_cfg = load_yaml(Path(args.compare_config))
@@ -158,10 +159,10 @@ def main() -> None:
     )
 
     results: list[BenchmarkResult] = []
-    results.extend(_run_local_comparable(compare_cfg, estimator_dataset_cfg, dataset, gt))
+    results.extend(_run_local_comparable(compare_cfg, estimator_dataset_cfg, dataset, gt, skip_pf=args.skip_pf))
 
     if not args.skip_stonesoup:
-        results.extend(_run_stonesoup(compare_cfg, dataset, gt))
+        results.extend(_run_stonesoup(compare_cfg, dataset, gt, skip_pf=args.skip_pf))
     else:
         results.extend(_skipped_external_suite("Stone Soup", len(gt), "disabled by --skip-stonesoup", algorithms=("ekf", "ukf", "pf")))
 
@@ -175,7 +176,7 @@ def main() -> None:
         output_dir,
         results,
         gt,
-        algorithms=("ekf", "ukf", "pf"),
+        algorithms=("ekf", "ukf") if args.skip_pf else ("ekf", "ukf", "pf"),
         max_frames=args.animation_max_frames,
         fps=args.animation_fps,
         covariance_sigma=args.covariance_ellipsoid_sigma,
@@ -196,7 +197,9 @@ def main() -> None:
     print(f"[StoneSoupBenchmark] Steps       : {len(gt)}")
     measurement_updates = sum(1 for sample in dataset if sample.get("measurement") is not None)
     print(f"[StoneSoupBenchmark] Updates     : {measurement_updates}/{len(dataset)} position measurements")
-    if args.use_pseudo_position_measurement:
+    if args.use_pseudo_position_measurement and args.dataset_type == "m2dgr":
+        print(f"[StoneSoupBenchmark] Measurement : real GNSS topic {args.gnss_topic}")
+    elif args.use_pseudo_position_measurement:
         print(
             "[StoneSoupBenchmark] Measurement : GT-sampled pseudo-position "
             f"(stride={max(1, args.pseudo_position_stride)}, not real GNSS)"
@@ -234,18 +237,29 @@ def _run_output_slug(args: argparse.Namespace) -> str:
     return dataset_run_slug(args.bag, args.dataset_name, args.dataset_type)
 
 
+def _measurement_source(args: argparse.Namespace) -> str:
+    if not args.use_pseudo_position_measurement:
+        return "none_imu_only"
+    if args.dataset_type == "m2dgr":
+        return "real_gnss_ublox_fix"
+    return "gt_sampled_pseudo_position_not_real_gnss"
+
+
 def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
+    mode = "imu_only"
+    if args.use_pseudo_position_measurement:
+        mode = (
+            "fused"
+            if args.dataset_type == "m2dgr"
+            else f"fused_sampled_{max(1, int(args.pseudo_position_stride))}_{max(0, int(args.pseudo_position_offset))}"
+        )
     common_cfg = {
         "dataset_name": args.dataset_name,
         "pose_type": "3d",
-        "mode": (
-            f"fused_sampled_{max(1, int(args.pseudo_position_stride))}_{max(0, int(args.pseudo_position_offset))}"
-            if args.use_pseudo_position_measurement
-            else "imu_only"
-        ),
+        "mode": mode,
         "generated_csv_path": str(output_dir / f"{args.dataset_name}_dataset.csv"),
         "use_imu": True,
-        "use_gnss": False,
+        "use_gnss": args.dataset_type == "m2dgr",
         "use_position_measurement": bool(args.use_pseudo_position_measurement),
         "position_measurement_noise_model": "gaussian",
         "position_measurement_noise_std": list(args.position_measurement_noise_std),
@@ -263,7 +277,8 @@ def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[st
             "m2dgr_imu_topic": args.imu_topic,
             "m2dgr_gnss_topic": args.gnss_topic,
             "m2dgr_linear_source": args.linear_source,
-            "m2dgr_use_gt_as_gnss": bool(args.use_pseudo_position_measurement),
+            "m2dgr_use_gt_as_gnss": False,
+            "measurement_source": "real_gnss_ublox_fix",
         }
     return {
         **common_cfg,
@@ -273,11 +288,7 @@ def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[st
         "rosbag_gt_topic": args.gt_topic,
         "rosbag_linear_source": args.linear_source,
         "rosbag_use_gt_as_position_measurement": bool(args.use_pseudo_position_measurement),
-        "measurement_source": (
-            "gt_sampled_pseudo_position_not_real_gnss"
-            if args.use_pseudo_position_measurement
-            else "none_imu_only"
-        ),
+        "measurement_source": _measurement_source(args),
         "pseudo_position_stride": max(1, int(args.pseudo_position_stride)),
         "pseudo_position_offset": max(0, int(args.pseudo_position_offset)),
     }
@@ -297,6 +308,11 @@ def _effective_compare_config(compare_cfg: dict[str, Any], args: argparse.Namesp
     for key in ("kalman_filter", "extended_kalman_filter", "unscented_kalman_filter", "particle_filter"):
         meas_cfg = cfg.setdefault(key, {}).setdefault("measurement_model", {})
         meas_cfg["measurement_noise_diag"] = measurement_variance
+        if args.linear_source == "gt_velocity":
+            motion_cfg = cfg.setdefault(key, {}).setdefault("motion_model", {})
+            motion_cfg["control_input_type"] = "none"
+            motion_cfg["accel_bias"] = [0.0, 0.0, 0.0]
+            motion_cfg["gravity"] = [0.0, 0.0, 0.0]
     return cfg
 
 
@@ -358,12 +374,16 @@ def _run_local_comparable(
     dataset_cfg: dict[str, Any],
     dataset: list[dict],
     gt: np.ndarray,
+    *,
+    skip_pf: bool = False,
 ) -> list[BenchmarkResult]:
     constructors: list[tuple[str, str, type]] = [
         ("ekf", "Our EKF", ExtendedKalmanFilter),
         ("ukf", "Our UKF", UnscentedKalmanFilter),
         ("pf", "Our PF", ParticleFilter),
     ]
+    if skip_pf:
+        constructors = [item for item in constructors if item[0] != "pf"]
     results: list[BenchmarkResult] = []
     for algorithm, name, cls in tqdm(constructors, desc="Our comparable filters", unit="filter"):
         try:
@@ -374,7 +394,13 @@ def _run_local_comparable(
     return results
 
 
-def _run_stonesoup(compare_cfg: dict[str, Any], dataset: list[dict], gt: np.ndarray) -> list[BenchmarkResult]:
+def _run_stonesoup(
+    compare_cfg: dict[str, Any],
+    dataset: list[dict],
+    gt: np.ndarray,
+    *,
+    skip_pf: bool = False,
+) -> list[BenchmarkResult]:
     repo_path = COMPARE_REPOS_ROOT / "Stone-Soup"
     if not repo_path.exists():
         return _skipped_external_suite("Stone Soup", len(gt), f"repo missing at {repo_path}", algorithms=("ekf", "ukf", "pf"))
@@ -412,7 +438,7 @@ def _run_stonesoup(compare_cfg: dict[str, Any], dataset: list[dict], gt: np.ndar
         "State": State,
         "StateVectors": StateVectors,
     }
-    return [
+    results = [
         _run_stonesoup_gaussian(
             "ekf",
             ExtendedKalmanPredictor,
@@ -432,17 +458,21 @@ def _run_stonesoup(compare_cfg: dict[str, Any], dataset: list[dict], gt: np.ndar
             common,
             sigma_cfg=compare_cfg["unscented_kalman_filter"].get("sigma_points", {}),
         ),
-        _run_stonesoup_particle(
-            compare_cfg["particle_filter"],
-            dataset,
-            gt,
-            common,
-            ParticlePredictor,
-            ParticleUpdater,
-            ESSResampler,
-            SystematicResampler,
-        ),
     ]
+    if not skip_pf:
+        results.append(
+            _run_stonesoup_particle(
+                compare_cfg["particle_filter"],
+                dataset,
+                gt,
+                common,
+                ParticlePredictor,
+                ParticleUpdater,
+                ESSResampler,
+                SystematicResampler,
+            )
+        )
+    return results
 
 
 def _run_stonesoup_gaussian(
@@ -572,12 +602,15 @@ def _run_stonesoup_particle(
         estimates = []
         covariances = []
         timestamp = state.timestamp
+        last_measurement = None
+        time_since_last_measurement = 0.0
         random_state = np.random.get_state()
         if seed is not None:
             np.random.seed(int(seed))
         try:
             for sample in tqdm(data, desc="Stone Soup PF steps", unit="step"):
                 dt = float(sample.get("dt", 1.0))
+                time_since_last_measurement += max(dt, 0.0)
                 timestamp = timestamp + timedelta(seconds=dt)
                 transition_model.transition_matrix = _cv_F(dt)
                 control_vector = _cv_control_vector(motion_cfg, sample.get("control"), dt).reshape(6, 1)
@@ -608,6 +641,19 @@ def _run_stonesoup_particle(
                             std,
                             size=(num_particles, len(position_indices)),
                         )
+                        if last_measurement is not None and time_since_last_measurement > 1e-12:
+                            velocity_indices = np.asarray(position_indices, dtype=int) + 3
+                            valid = velocity_indices < samples.shape[1]
+                            if np.any(valid):
+                                measured_velocity = (z[valid] - last_measurement[valid]) / time_since_last_measurement
+                                velocity_std = np.maximum(std[valid] / time_since_last_measurement, 1e-6)
+                                samples[:, velocity_indices[valid]] = measured_velocity[None, :] + rng.normal(
+                                    0.0,
+                                    velocity_std,
+                                    size=(num_particles, int(np.sum(valid))),
+                                )
+                        last_measurement = z.copy()
+                        time_since_last_measurement = 0.0
                         state = ss["ParticleState"](
                             state_vector=ss["StateVectors"](samples.T),
                             weight=np.full(num_particles, 1.0 / num_particles, dtype=float),

@@ -100,7 +100,7 @@ def main() -> None:
     _initialize_our_inekf_from_gt(compare_cfg, gt, dataset, args)
 
     filter_input_dir = output_dir / "filter_inputs"
-    our_15d_dataset = _with_interpolated_position_measurements(dataset, gt)
+    our_15d_dataset = _with_interpolated_position_measurements(dataset, gt, args.linear_source)
     our_9d_csv = _write_filter_input_csv(filter_input_dir / "our_inekf_9d.csv", dataset, gt, timestamps_ns)
     our_15d_csv = _write_filter_input_csv(filter_input_dir / "our_inekf_15d.csv", our_15d_dataset, gt, timestamps_ns)
     input_dir = export_invariant_ekf_input(output_dir / "repo_inputs" / "invariant_ekf", dataset, gt, timestamps_ns)
@@ -325,17 +325,20 @@ def _resolve_runner(configured: str) -> Path | None:
 
 
 def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
+    mode = "imu_only"
+    if args.use_pseudo_position_measurement:
+        mode = (
+            "fused"
+            if args.dataset_type == "m2dgr"
+            else f"fused_sampled_{max(1, int(args.pseudo_position_stride))}_{max(0, int(args.pseudo_position_offset))}"
+        )
     common_cfg = {
         "dataset_name": args.dataset_name,
         "pose_type": "3d",
-        "mode": (
-            f"fused_sampled_{max(1, int(args.pseudo_position_stride))}_{max(0, int(args.pseudo_position_offset))}"
-            if args.use_pseudo_position_measurement
-            else "imu_only"
-        ),
+        "mode": mode,
         "generated_csv_path": str(output_dir / f"{args.dataset_name}_dataset.csv"),
         "use_imu": True,
-        "use_gnss": False,
+        "use_gnss": args.dataset_type == "m2dgr",
         "use_position_measurement": bool(args.use_pseudo_position_measurement),
         "position_measurement_noise_model": "gaussian",
         "position_measurement_noise_std": list(args.position_measurement_noise_std),
@@ -353,7 +356,8 @@ def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[st
             "m2dgr_imu_topic": args.imu_topic,
             "m2dgr_gnss_topic": args.gnss_topic,
             "m2dgr_linear_source": args.linear_source,
-            "m2dgr_use_gt_as_gnss": bool(args.use_pseudo_position_measurement),
+            "m2dgr_use_gt_as_gnss": False,
+            "measurement_source": "real_gnss_ublox_fix",
         }
     return {
         **common_cfg,
@@ -520,7 +524,7 @@ def _write_filter_input_csv(path: Path, dataset: list[dict], gt: np.ndarray, tim
     return path
 
 
-def _with_interpolated_position_measurements(dataset: list[dict], gt: np.ndarray) -> list[dict]:
+def _with_interpolated_position_measurements(dataset: list[dict], gt: np.ndarray, linear_source: str | None) -> list[dict]:
     measured_indices: list[int] = []
     measured_positions: list[np.ndarray] = []
     for idx, sample in enumerate(dataset):
@@ -536,7 +540,8 @@ def _with_interpolated_position_measurements(dataset: list[dict], gt: np.ndarray
     measured = np.vstack(measured_positions)
     interpolated = np.column_stack([np.interp(full_index, measured_index, measured[:, axis]) for axis in range(3)])
 
-    accel_bias = _initial_accel_bias(dataset)
+    use_accel_bias = str(linear_source).strip().lower() == "accel"
+    accel_bias = _initial_accel_bias(dataset) if use_accel_bias else np.zeros(3, dtype=float)
     out: list[dict] = []
     for idx, sample in enumerate(dataset):
         copied = dict(sample)
