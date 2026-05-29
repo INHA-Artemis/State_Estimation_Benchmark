@@ -32,6 +32,13 @@ class InvariantKalmanFilter15D:
         self.pose_type = pose_type
         self.mode = mode
         self.error_dim = 15
+        self.use_imu_velocity = bool(motion_cfg.get("use_imu_velocity", True))
+        self.use_imu_rotation = bool(motion_cfg.get("use_imu_rotation", True))
+        self.translation_input_frame = str(motion_cfg.get("translation_input_frame", "body"))
+        self.translation_input_type = str(motion_cfg.get("translation_input_type", "acceleration"))
+        self.rotation_input_type = str(motion_cfg.get("rotation_input_type", "rate"))
+        self.rotation_representation = str(motion_cfg.get("rotation_representation", "rotvec"))
+        self.velocity_blend = float(motion_cfg.get("velocity_blend", 0.0))
         self.gravity = np.asarray(motion_cfg.get("gravity", [0.0, 0.0, -9.81]), dtype=float).reshape(3)
         self.process_noise_diag = fit_diag(
             motion_cfg.get(
@@ -103,18 +110,57 @@ class InvariantKalmanFilter15D:
         dt = max(dt, 0.0)
         dt2 = dt * dt
 
+        R_prev = self.Rot
+        v_prev = self.v.copy()
         w = u[3:6] - self.gyro_bias
         a = u[0:3] - self.accel_bias
         phi = w * dt
-        G0 = lie.so3_exp(phi)
         G1 = lie.so3_left_jacobian(phi)
         G2 = _gamma2(phi)
 
-        R_prev = self.Rot
-        v_prev = self.v.copy()
-        self.Rot = R_prev @ G0
-        self.v = self.v + R_prev @ G1 @ a * dt + self.gravity * dt
-        self.p = self.p + v_prev * dt + R_prev @ G2 @ a * dt2 + 0.5 * self.gravity * dt2
+        if self.use_imu_rotation:
+            if self.rotation_input_type == "rate":
+                rot_vec = phi
+            elif self.rotation_input_type == "increment":
+                rot_vec = w
+            else:
+                raise ValueError(f"Unsupported rotation_input_type: {self.rotation_input_type}")
+
+            if self.rotation_representation == "rotvec":
+                self.Rot = R_prev @ lie.so3_exp(rot_vec)
+            elif self.rotation_representation == "euler":
+                self.Rot = lie.rpy_to_rot(lie.rot_to_rpy(R_prev) + rot_vec)
+            else:
+                raise ValueError(f"Unsupported rotation_representation: {self.rotation_representation}")
+
+        if self.use_imu_velocity:
+            if self.translation_input_frame == "body":
+                trans_world = R_prev @ G1 @ a if self.translation_input_type == "acceleration" else R_prev @ a
+            elif self.translation_input_frame == "world":
+                trans_world = a
+            else:
+                raise ValueError(f"Unsupported translation_input_frame: {self.translation_input_frame}")
+
+            if self.translation_input_type == "acceleration":
+                accel_world = trans_world + self.gravity
+                if self.translation_input_frame == "body":
+                    self.p = self.p + v_prev * dt + R_prev @ G2 @ a * dt2 + 0.5 * self.gravity * dt2
+                    self.v = self.v + accel_world * dt
+                else:
+                    self.p = self.p + v_prev * dt + 0.5 * accel_world * dt2
+                    self.v = self.v + accel_world * dt
+            elif self.translation_input_type == "velocity":
+                self.v = self.velocity_blend * self.v + (1.0 - self.velocity_blend) * trans_world
+                self.p = self.p + self.v * dt
+            elif self.translation_input_type == "increment":
+                self.p = self.p + trans_world
+                if dt > 1e-12:
+                    inferred_v = trans_world / dt
+                    self.v = self.velocity_blend * self.v + (1.0 - self.velocity_blend) * inferred_v
+            else:
+                raise ValueError(f"Unsupported translation_input_type: {self.translation_input_type}")
+        else:
+            self.p = self.p + self.v * dt
 
         A = np.zeros((self.error_dim, self.error_dim), dtype=float)
         A[0:3, 0:3] = -lie.skew(w)

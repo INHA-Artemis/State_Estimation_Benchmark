@@ -14,12 +14,12 @@ common:
 
 dataset:
   # To switch back to KAIST VIO, use this block:
-  # type: kaist_vio
-  # name: kaist_vio_square
-  # bag: datasets/KAIST_VIO/square.bag
-  # imu_topic: /mavros/imu/data
-  # gt_topic: /pose_transformed
-  # linear_source: accel
+  #type: kaist_vio
+  #name: kaist_vio_rotation
+  #bag: datasets/KAIST_VIO/rotation.bag
+  #imu_topic: /mavros/imu/data
+  #gt_topic: /pose_transformed
+  #linear_source: accel
 
   type: m2dgr
   name: m2dgr_street_02

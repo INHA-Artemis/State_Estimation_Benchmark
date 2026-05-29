@@ -42,7 +42,7 @@ def load_m2dgr_dataset(dataset_cfg: dict) -> tuple[np.ndarray, np.ndarray, np.nd
 
     gt_timestamps, gt = _load_ground_truth_txt(gt_txt_path)
     imu_timestamps, accel, gyro = _load_imu_messages(bag_path, imu_topic)
-    gnss_timestamps, gnss_measurements = _load_gnss_messages(bag_path, gnss_topic, gt)
+    gnss_timestamps, gnss_measurements = _load_gnss_messages(bag_path, gnss_topic, gt_timestamps, gt)
 
     overlap_start = max(int(imu_timestamps[0]), int(gt_timestamps[0]))
     overlap_end = min(int(imu_timestamps[-1]), int(gt_timestamps[-1]))
@@ -146,7 +146,12 @@ def _load_imu_messages(bag_path: Path, topic: str) -> tuple[np.ndarray, np.ndarr
     )
 
 
-def _load_gnss_messages(bag_path: Path, topic: str, gt: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _load_gnss_messages(
+    bag_path: Path,
+    topic: str,
+    gt_timestamps: np.ndarray,
+    gt: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
     timestamps: list[int] = []
     lla_rows: list[list[float]] = []
 
@@ -170,7 +175,7 @@ def _load_gnss_messages(bag_path: Path, topic: str, gt: np.ndarray) -> tuple[np.
 
     # Align the GNSS local frame to the GT local frame at the nearest timestamp.
     gnss_timestamps = np.asarray(timestamps, dtype=np.int64)
-    gt_origin_idx = nearest_indices(np.asarray(timestamps, dtype=np.int64), np.asarray([gnss_timestamps[0]], dtype=np.int64))[0]
+    gt_origin_idx = nearest_indices(gt_timestamps, np.asarray([gnss_timestamps[0]], dtype=np.int64))[0]
     frame_offset = gt[min(gt_origin_idx, len(gt) - 1), :3] - enu_rows[0]
     enu_rows = enu_rows + frame_offset[None, :]
 

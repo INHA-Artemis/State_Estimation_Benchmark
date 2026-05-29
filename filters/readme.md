@@ -358,8 +358,37 @@ $$
 If \(N_{\mathrm{eff}}\) is below the configured threshold, particles are
 resampled and weights are reset to \(1/N\).
 
+`PF-M1`
+
+If measurement rejuvenation is enabled, position particles are refreshed around
+the latest position measurement:
+
+$$
+p_k^i[\mathrm{indices}] =
+z_k + \eta_k^i,
+\quad
+\eta_k^i \sim \mathcal{N}(0, R_k).
+$$
+
+When a previous position measurement is available, the matching velocity
+components are refreshed around the finite-difference measurement velocity:
+
+$$
+\hat{v}_k =
+\frac{z_k - z_{k-1}}{\Delta t_{\mathrm{meas}}},
+\quad
+v_k^i[\mathrm{indices}] =
+\hat{v}_k + \nu_k^i.
+$$
+
+This keeps the constant-velocity particle state consistent after position
+rejuvenation. Without this velocity refresh, position-only rejuvenation can
+break the correlation between \(p\) and \(v\), causing drift between sparse
+measurement updates.
+
 `PF-S1` runs prediction, `PF-S2` runs likelihood update, `PF-S3` checks
-resampling, and `PF-S4` returns the weighted-mean benchmark pose.
+resampling, `PF-S4` optionally applies measurement rejuvenation, and `PF-S5`
+returns the weighted-mean benchmark pose.
 
 ## Invariant EKF
 

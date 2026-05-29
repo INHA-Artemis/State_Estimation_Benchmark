@@ -75,7 +75,7 @@ def main() -> None:
     parser.add_argument(
         "--covariance-ellipsoid-sigma",
         type=float,
-        default=2.0,
+        default=5.0,
         help="Accepted for CLI compatibility; external InEKF runners do not currently output covariance ellipsoids.",
     )
     parser.add_argument("--runner", default="", help="Path to the drift KAIST runner executable.")
@@ -106,7 +106,13 @@ def main() -> None:
             dt = dt[: args.max_steps]
     _initialize_our_inekf_from_gt(compare_cfg, gt, dataset, args)
 
-    velocity_dataset = _with_velocity_measurements(dataset, gt, timestamps_ns, args.use_pseudo_position_measurement)
+    velocity_dataset = _with_velocity_measurements(
+        dataset,
+        gt,
+        timestamps_ns,
+        args.use_pseudo_position_measurement,
+        args.linear_source,
+    )
     filter_input_csv = _write_filter_input_csv(output_dir / "filter_inputs" / "our_inekf_9d_velocity.csv", velocity_dataset, gt, timestamps_ns)
     filter_input_15d_csv = _write_filter_input_csv(output_dir / "filter_inputs" / "our_inekf_15d_velocity.csv", velocity_dataset, gt, timestamps_ns)
     input_csv = export_drift_input(output_dir / "repo_inputs" / "drift.csv", dataset, gt, timestamps_ns)
@@ -142,16 +148,32 @@ def main() -> None:
         print(f"[DriftBenchmark] Animation {algorithm:<5}: {animation_status}")
     for result in results:
         if result.status == "ok":
+            notes = f" ({result.notes})" if result.notes else ""
             print(
                 f"[DriftBenchmark] {result.implementation:<14} inekf "
                 f"rmse={result.rmse_position:.4f} var={result.error_variance:.6f} "
-                f"runtime={result.runtime_sec:.3f}s"
+                f"runtime={result.runtime_sec:.3f}s{notes}"
             )
         else:
             print(f"[DriftBenchmark] {result.implementation:<14} inekf {result.status}: {result.notes}")
 
 
 def _run_our_inekf(
+    compare_cfg: dict[str, Any],
+    dataset_cfg: dict[str, Any],
+    dataset: list[dict],
+    gt: np.ndarray,
+    input_csv: Path,
+) -> BenchmarkResult:
+    return _run_body_frame_with_comparison(
+        compare_cfg,
+        "invariant_kalman_filter",
+        ("ours", "Our InEKF", "inekf"),
+        lambda cfg: _run_our_inekf_once(cfg, dataset_cfg, dataset, gt, input_csv),
+    )
+
+
+def _run_our_inekf_once(
     compare_cfg: dict[str, Any],
     dataset_cfg: dict[str, Any],
     dataset: list[dict],
@@ -184,6 +206,21 @@ def _run_our_inekf_15d(
     gt: np.ndarray,
     input_csv: Path,
 ) -> BenchmarkResult:
+    return _run_body_frame_with_comparison(
+        compare_cfg,
+        "invariant_kalman_filter_15d",
+        ("ours", "Our InEKF 15D", "inekf"),
+        lambda cfg: _run_our_inekf_15d_once(cfg, dataset_cfg, dataset, gt, input_csv),
+    )
+
+
+def _run_our_inekf_15d_once(
+    compare_cfg: dict[str, Any],
+    dataset_cfg: dict[str, Any],
+    dataset: list[dict],
+    gt: np.ndarray,
+    input_csv: Path,
+) -> BenchmarkResult:
     try:
         estimator = InvariantKalmanFilter15D.from_configs(dataset_cfg, compare_cfg)
         start = time.perf_counter()
@@ -201,6 +238,44 @@ def _run_our_inekf_15d(
         return BenchmarkResult("ours", "Our InEKF 15D", "inekf", "ok", rmse, variance, runtime, len(gt), estimates=estimate_array, covariances=covariance_array, input_csv=str(input_csv))
     except Exception as exc:
         return BenchmarkResult("ours", "Our InEKF 15D", "inekf", "skipped", None, None, None, len(gt), f"{type(exc).__name__}: {exc}", input_csv=str(input_csv))
+
+
+def _run_body_frame_with_comparison(
+    compare_cfg: dict[str, Any],
+    config_key: str,
+    result_identity: tuple[str, str, str],
+    run_candidate: Any,
+) -> BenchmarkResult:
+    candidates = []
+    for frame in ("world", "body"):
+        candidate_cfg = _compare_config_with_translation_frame(compare_cfg, config_key, frame)
+        candidates.append((frame, run_candidate(candidate_cfg)))
+
+    body_result = next((result for frame, result in candidates if frame == "body"), None)
+    if body_result is None:
+        family, implementation, algorithm = result_identity
+        notes = _frame_comparison_notes("body", candidates)
+        return BenchmarkResult(family, implementation, algorithm, "skipped", None, None, None, candidates[0][1].steps if candidates else 0, notes)
+
+    body_result.notes = _frame_comparison_notes("body", candidates)
+    return body_result
+
+
+def _compare_config_with_translation_frame(compare_cfg: dict[str, Any], config_key: str, frame: str) -> dict[str, Any]:
+    cfg = copy.deepcopy(compare_cfg)
+    motion_cfg = cfg.setdefault(config_key, {}).setdefault("motion_model", {})
+    motion_cfg["translation_input_frame"] = frame
+    return cfg
+
+
+def _frame_comparison_notes(benchmark_frame: str, candidates: list[tuple[str, BenchmarkResult]]) -> str:
+    details = []
+    for frame, result in candidates:
+        if result.status == "ok" and result.rmse_position is not None:
+            details.append(f"{frame} rmse={result.rmse_position:.6g}")
+        else:
+            details.append(f"{frame} {result.status}")
+    return f"benchmark_frame={benchmark_frame}; comparison: " + ", ".join(details)
 
 
 def _run_drift(args: argparse.Namespace, input_csv: Path, estimates_csv: Path, gt: np.ndarray) -> BenchmarkResult:
@@ -309,6 +384,9 @@ def _effective_compare_config(compare_cfg: dict[str, Any], args: argparse.Namesp
     cfg = copy.deepcopy(compare_cfg)
     measurement_variance = np.square(np.asarray(args.velocity_measurement_noise_std, dtype=float)).tolist()
     inekf_cfg = cfg.setdefault("invariant_kalman_filter", {})
+    motion_cfg = inekf_cfg.setdefault("motion_model", {})
+    if args.linear_source == "gt_velocity":
+        motion_cfg["translation_input_type"] = "velocity"
     meas_cfg = inekf_cfg.setdefault("measurement_model", {})
     meas_cfg["measurement_noise_diag"] = measurement_variance
     meas_cfg["innovation_gate_m"] = 0.0
@@ -384,9 +462,11 @@ def _with_velocity_measurements(
     gt: np.ndarray,
     timestamps_ns: np.ndarray,
     enabled: bool,
+    linear_source: str,
 ) -> list[dict]:
     velocities = _estimate_world_velocity(timestamps_ns, np.asarray(gt, dtype=float)[:, 0:3])
-    accel_bias = _estimate_initial_accel_bias(dataset)
+    use_accel_bias = str(linear_source).strip().lower() == "accel"
+    accel_bias = _estimate_initial_accel_bias(dataset) if use_accel_bias else np.zeros(3, dtype=float)
     copied_dataset: list[dict] = []
     for idx, sample in enumerate(dataset):
         copied = dict(sample)

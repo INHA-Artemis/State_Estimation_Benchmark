@@ -68,7 +68,7 @@ def main() -> None:
     parser.add_argument(
         "--covariance-ellipsoid-sigma",
         type=float,
-        default=2.0,
+        default=5.0,
         help="Accepted for CLI compatibility; external InEKF runners do not currently output covariance ellipsoids.",
     )
     parser.add_argument("--runner", default="", help="Path to the invariant-ekf KAIST runner executable.")
@@ -136,16 +136,32 @@ def main() -> None:
         print(f"[InvariantEkfBenchmark] Animation {algorithm:<5}: {animation_status}")
     for result in results:
         if result.status == "ok":
+            notes = f" ({result.notes})" if result.notes else ""
             print(
                 f"[InvariantEkfBenchmark] {result.implementation:<14} inekf "
                 f"rmse={result.rmse_position:.4f} var={result.error_variance:.6f} "
-                f"runtime={result.runtime_sec:.3f}s"
+                f"runtime={result.runtime_sec:.3f}s{notes}"
             )
         else:
             print(f"[InvariantEkfBenchmark] {result.implementation:<14} inekf {result.status}: {result.notes}")
 
 
 def _run_our_inekf(
+    compare_cfg: dict[str, Any],
+    dataset_cfg: dict[str, Any],
+    dataset: list[dict],
+    gt: np.ndarray,
+    input_csv: Path,
+) -> BenchmarkResult:
+    return _run_body_frame_with_comparison(
+        compare_cfg,
+        "invariant_kalman_filter",
+        ("ours", "Our InEKF", "inekf"),
+        lambda cfg: _run_our_inekf_once(cfg, dataset_cfg, dataset, gt, input_csv),
+    )
+
+
+def _run_our_inekf_once(
     compare_cfg: dict[str, Any],
     dataset_cfg: dict[str, Any],
     dataset: list[dict],
@@ -176,6 +192,21 @@ def _run_our_inekf_15d(
     gt: np.ndarray,
     input_csv: Path,
 ) -> BenchmarkResult:
+    return _run_body_frame_with_comparison(
+        compare_cfg,
+        "invariant_kalman_filter_15d",
+        ("ours", "Our InEKF 15D", "inekf"),
+        lambda cfg: _run_our_inekf_15d_once(cfg, dataset_cfg, dataset, gt, input_csv),
+    )
+
+
+def _run_our_inekf_15d_once(
+    compare_cfg: dict[str, Any],
+    dataset_cfg: dict[str, Any],
+    dataset: list[dict],
+    gt: np.ndarray,
+    input_csv: Path,
+) -> BenchmarkResult:
     try:
         estimator = InvariantKalmanFilter15D.from_configs(dataset_cfg, compare_cfg)
         start = time.perf_counter()
@@ -191,6 +222,53 @@ def _run_our_inekf_15d(
         return BenchmarkResult("ours", "Our InEKF 15D", "inekf", "ok", rmse, variance, runtime, len(gt), estimates=estimate_array, covariances=covariance_array, input_csv=str(input_csv))
     except Exception as exc:
         return BenchmarkResult("ours", "Our InEKF 15D", "inekf", "skipped", None, None, None, len(gt), f"{type(exc).__name__}: {exc}", input_csv=str(input_csv))
+
+
+def _run_body_frame_with_comparison(
+    compare_cfg: dict[str, Any],
+    config_key: str,
+    result_identity: tuple[str, str, str],
+    run_candidate: Any,
+) -> BenchmarkResult:
+    candidates = []
+    for frame in ("world", "body"):
+        candidate_cfg = _compare_config_with_translation_frame(compare_cfg, config_key, frame)
+        candidates.append((frame, run_candidate(candidate_cfg)))
+
+    ok_candidates = [
+        (frame, result)
+        for frame, result in candidates
+        if result.status == "ok" and result.rmse_position is not None and np.isfinite(result.rmse_position)
+    ]
+    selected_frame, selected_result = (
+        min(ok_candidates, key=lambda item: float(item[1].rmse_position))
+        if ok_candidates
+        else (None, None)
+    )
+    if selected_result is None:
+        family, implementation, algorithm = result_identity
+        notes = _frame_comparison_notes("none", candidates)
+        return BenchmarkResult(family, implementation, algorithm, "skipped", None, None, None, candidates[0][1].steps if candidates else 0, notes)
+
+    selected_result.notes = _frame_comparison_notes(str(selected_frame), candidates)
+    return selected_result
+
+
+def _compare_config_with_translation_frame(compare_cfg: dict[str, Any], config_key: str, frame: str) -> dict[str, Any]:
+    cfg = copy.deepcopy(compare_cfg)
+    motion_cfg = cfg.setdefault(config_key, {}).setdefault("motion_model", {})
+    motion_cfg["translation_input_frame"] = frame
+    return cfg
+
+
+def _frame_comparison_notes(benchmark_frame: str, candidates: list[tuple[str, BenchmarkResult]]) -> str:
+    details = []
+    for frame, result in candidates:
+        if result.status == "ok" and result.rmse_position is not None:
+            details.append(f"{frame} rmse={result.rmse_position:.6g}")
+        else:
+            details.append(f"{frame} {result.status}")
+    return f"benchmark_frame={benchmark_frame}; comparison: " + ", ".join(details)
 
 
 def _run_invariant_ekf(args: argparse.Namespace, input_dir: Path, estimates_csv: Path, gt: np.ndarray) -> BenchmarkResult:
@@ -302,58 +380,54 @@ def _effective_compare_config(compare_cfg: dict[str, Any], args: argparse.Namesp
     measurement_variance = np.square(np.asarray(args.position_measurement_noise_std, dtype=float)).tolist()
 
     inekf_cfg = cfg.setdefault("invariant_kalman_filter", {})
+    motion_cfg = inekf_cfg.setdefault("motion_model", {})
+    if args.linear_source == "gt_velocity":
+        motion_cfg["translation_input_type"] = "velocity"
     meas_cfg = inekf_cfg.setdefault("measurement_model", {})
     meas_cfg["measurement_noise_diag"] = measurement_variance
     meas_cfg["innovation_gate_m"] = 0.0
     meas_cfg["mahalanobis_gate"] = 0.0
 
-    gps_repeat_count = 128.0
     inekf_15d_cfg = copy.deepcopy(inekf_cfg)
     inekf_15d_cfg["filter"] = {"name": "comparable_inekf_15d"}
-    inekf_15d_cfg["initialization"]["mean"] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    inekf_15d_cfg["initialization"]["velocity_mean"] = [0.0, 0.0, 0.0]
     inekf_15d_cfg["initialization"]["cov_diag"] = [
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
+        0.001,
+        0.001,
+        0.001,
+        2.0,
+        2.0,
+        2.0,
+        5.0,
+        5.0,
+        5.0,
+        0.1,
+        0.1,
+        0.1,
+        0.5,
+        0.5,
+        0.5,
     ]
     inekf_15d_cfg["motion_model"]["process_noise_diag"] = [
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0,
+        1.0e-6,
+        1.0e-6,
+        1.0e-6,
+        1.0e-3,
+        1.0e-3,
+        1.0e-3,
+        1.0e-3,
+        1.0e-3,
+        1.0e-3,
+        1.0e-8,
+        1.0e-8,
+        1.0e-8,
+        1.0e-6,
+        1.0e-6,
+        1.0e-6,
     ]
     inekf_15d_cfg["motion_model"]["gravity"] = [0.0, 0.0, -9.81]
     inekf_15d_cfg["motion_model"]["accel_bias"] = [0.0, 0.0, 0.0]
     inekf_15d_cfg["motion_model"]["gyro_bias"] = [0.0, 0.0, 0.0]
-    inekf_15d_cfg["measurement_model"]["measurement_noise_diag"] = [
-        4.6778e3 / gps_repeat_count,
-        11.5621e3 / gps_repeat_count,
-        22.4051e3 / gps_repeat_count,
-    ]
+    inekf_15d_cfg["measurement_model"]["measurement_noise_diag"] = measurement_variance
     inekf_15d_cfg["measurement_model"]["innovation_gate_m"] = 0.0
     inekf_15d_cfg["measurement_model"]["mahalanobis_gate"] = 0.0
     cfg["invariant_kalman_filter_15d"] = inekf_15d_cfg
@@ -364,7 +438,7 @@ def _initialize_our_inekf_from_gt(compare_cfg: dict[str, Any], gt: np.ndarray, d
     if len(gt) == 0:
         return
     initial_pose = np.asarray(gt[0], dtype=float).reshape(-1)
-    for key in ("invariant_kalman_filter",):
+    for key in ("invariant_kalman_filter", "invariant_kalman_filter_15d"):
         init_cfg = compare_cfg.setdefault(key, {}).setdefault("initialization", {})
         init_cfg["mean"] = initial_pose[:6].tolist()
         if args.linear_source == "gt_velocity":

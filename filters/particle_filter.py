@@ -54,11 +54,21 @@ class ParticleFilter:
             self.measurement_indices.size,
             fill_missing="edge",
         )
+        self.measurement_rejuvenation_velocity_std = fit_diag(
+            meas_cfg.get(
+                "measurement_rejuvenation_velocity_std",
+                np.sqrt(np.clip(self.process_noise_diag[self.pos_dim : self.dim], 1e-12, None)),
+            ),
+            self.measurement_indices.size,
+            fill_missing="edge",
+        )
         self.resampling_method = str(resampling_method).lower()
         self.particles = np.zeros((self.num_particles, self.dim), dtype=float)
         self.weights = np.full(self.num_particles, 1.0 / self.num_particles, dtype=float)
         self.log_likelihood = np.zeros(self.num_particles, dtype=float)
         self.last_position_covariance = np.eye(self.pos_dim, dtype=float)
+        self.last_measurement: np.ndarray | None = None
+        self.time_since_last_measurement = 0.0
         self.initialized = False
 
     @classmethod
@@ -134,6 +144,7 @@ class ParticleFilter:
         if run_mode in {"imu_only", "fused"}:
             # PF-S1: run particle prediction when control/IMU is enabled.
             self.predict(control, dt)
+        self.time_since_last_measurement += max(float(dt), 0.0)
         if run_mode in {"gnss_only", "fused"}:
             # PF-S2: run likelihood update when GNSS/position is enabled.
             self.measurement_update(measurement)
@@ -141,7 +152,7 @@ class ParticleFilter:
             # PF-S4: resample only when effective sample size is below threshold.
             self.resample()
         if measurement is not None and self.measurement_rejuvenation:
-            self.rejuvenate_from_measurement(measurement)
+            self.rejuvenate_from_measurement(measurement, self.time_since_last_measurement)
         estimate = self.estimate_pose()
         self.last_position_covariance = self.position_covariance()
         return estimate
@@ -162,8 +173,9 @@ class ParticleFilter:
         centered = positions - mean[None, :]
         return centered.T @ (centered * self.weights[:, None])
 
-    def rejuvenate_from_measurement(self, measurement: Iterable[float]) -> None:
+    def rejuvenate_from_measurement(self, measurement: Iterable[float], elapsed_dt: float | None = None) -> None:
         z = cv.validate_measurement(measurement, self.measurement_indices.size)
+        previous_measurement = None if self.last_measurement is None else self.last_measurement.copy()
         std = np.sqrt(np.clip(self.measurement_noise_diag, 1e-12, None))
         configured = np.asarray(self.measurement_rejuvenation_std, dtype=float).reshape(-1)
         std = np.maximum(std, configured)
@@ -172,4 +184,27 @@ class ParticleFilter:
             std,
             size=(self.num_particles, self.measurement_indices.size),
         )
+
+        # Position rejuvenation alone can break the position/velocity
+        # correlation in a constant-velocity PF. When consecutive position
+        # measurements are available, refresh the matching velocity components
+        # around the finite-difference velocity implied by those measurements.
+        if previous_measurement is not None:
+            dt = float(self.time_since_last_measurement if elapsed_dt is None else elapsed_dt)
+            if dt > 1e-12:
+                velocity_indices = self.measurement_indices + self.pos_dim
+                valid = velocity_indices < self.dim
+                if np.any(valid):
+                    measured_velocity = (z[valid] - previous_measurement[valid]) / dt
+                    vel_std = np.asarray(self.measurement_rejuvenation_velocity_std, dtype=float).reshape(-1)[valid]
+                    position_velocity_std = std[valid] / max(dt, 1e-12)
+                    vel_std = np.maximum(vel_std, position_velocity_std)
+                    self.particles[:, velocity_indices[valid]] = measured_velocity[None, :] + self.rng.normal(
+                        0.0,
+                        vel_std,
+                        size=(self.num_particles, int(np.sum(valid))),
+                    )
+
+        self.last_measurement = z.copy()
+        self.time_since_last_measurement = 0.0
         self.weights.fill(1.0 / self.num_particles)

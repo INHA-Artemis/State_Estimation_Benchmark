@@ -36,18 +36,21 @@ PF is therefore not expected to dominate the clean Gaussian case; its advantage 
 
 ## Reference Comparison
 
-| Feature \ Reference | [navlie](https://github.com/decargroup/navlie) | [FilterPy](https://github.com/rlabbe/filterpy) | [Stone Soup](https://stonesoup.readthedocs.io/en/v1.2/auto_tutorials/index.html) | [robot_localization](https://github.com/cra-ros-pkg/robot_localization) | [DRIFT](https://github.com/UMich-CURLY/drift) | OURS |
-| --- | --- | --- | --- | --- | --- | --- |
-| **Python-based** | O | O | O | X | X | O |
-| **EKF** | O | O | O | O | X | O |
-| **UKF** | O | O | O | O | X | O |
-| **PF** | X | O | O | X | X | O |
-| **InEKF** | X | X | X | X | O | O |
-| **Real-time estimation visualization** | X | X | X | X | X | O |
-| **IMU model/input support** | O | X | X | O | O | O |
-| **GPS processing/integration** | X | X | X | O | X | O |
-| **IMU on/off** | X | X | X | X | X | O |
-| **GPS on/off** | X | X | X | X | X | O |
+This table describes the comparison paths currently wired into this repository,
+not every feature each upstream project may provide.
+
+| Feature \ Reference | [FilterPy](https://github.com/rlabbe/filterpy) | [Stone Soup](https://stonesoup.readthedocs.io/en/v1.2/auto_tutorials/index.html) | [invariant-ekf](https://github.com/RossHartley/invariant-ekf) | [DRIFT](https://github.com/UMich-CURLY/drift) | OURS |
+| --- | --- | --- | --- | --- | --- |
+| **Benchmark script included** | O | O | O | O | O |
+| **Python-based path** | O | O | X | X | O |
+| **External C++ runner path** | X | X | O | O | X |
+| **EKF** | O | O | X | X | O |
+| **UKF** | O | O | X | X | O |
+| **PF** | X | O | X | X | O |
+| **InEKF** | X | X | O | O | O |
+| **Uses common dataset adapter** | O | O | O | O | O |
+| **Position/GPS-style update path** | O | O | O | X | O |
+| **Velocity update path** | X | X | X | O | O |
 
 ## How To Run Benchmarks
 

@@ -115,7 +115,7 @@ def main() -> None:
     parser.add_argument(
         "--covariance-ellipsoid-sigma",
         type=float,
-        default=2.0,
+        default=5.0,
         help="Sigma scale for 3D position covariance ellipsoids in trajectory MP4s.",
     )
     parser.add_argument(
