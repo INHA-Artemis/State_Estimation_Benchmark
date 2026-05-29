@@ -101,6 +101,15 @@ def save_dataset_to_csv(
 def load_dataset_from_csv(csv_path: Path, pose_type: str, mode: str) -> tuple[list[dict], np.ndarray]:
     dataset: list[dict] = []
     gt_rows: list[np.ndarray] = []
+    measurement_stride = 1
+    measurement_offset = 0
+    if mode.startswith("fused_sampled_"):
+        parts = mode.split("_")
+        if len(parts) >= 3:
+            measurement_stride = max(1, int(parts[2]))
+        if len(parts) >= 4:
+            measurement_offset = max(0, int(parts[3]))
+        mode = "fused"
 
     with csv_path.open("r", newline="", encoding="utf-8") as csv_file:
         reader = csv.DictReader(csv_file)
@@ -139,7 +148,11 @@ def load_dataset_from_csv(csv_path: Path, pose_type: str, mode: str) -> tuple[li
             dataset.append(
                 {
                     "control": None if mode == "gnss_only" else control,
-                    "measurement": None if mode == "imu_only" else measurement,
+                    "measurement": (
+                        None
+                        if mode == "imu_only" or (mode == "fused" and (len(dataset) - measurement_offset) % measurement_stride != 0)
+                        else measurement
+                    ),
                     "raw_control": control,
                     "raw_measurement": measurement,
                     "dt": dt,

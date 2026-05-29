@@ -70,7 +70,10 @@ def build_noisy_position_measurements(
     seed = int(dataset_cfg.get("seed", 10))
     rng = np.random.default_rng(seed)
     default_std = np.array([0.7, 0.7, 0.7], dtype=float)
-    meas_std = np.asarray(dataset_cfg.get("gnss_noise_std", default_std), dtype=float).reshape(-1)
+    meas_std = np.asarray(
+        dataset_cfg.get("position_measurement_noise_std", dataset_cfg.get("gnss_noise_std", default_std)),
+        dtype=float,
+    ).reshape(-1)
     if meas_std.size == 1:
         meas_std = np.full(3, float(meas_std.item()), dtype=float)
     elif meas_std.size == 2:

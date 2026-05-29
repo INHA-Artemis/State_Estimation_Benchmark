@@ -8,8 +8,6 @@ from datasets.euroc_loader import load_euroc_dataset
 from datasets.m2dgr_loader import load_m2dgr_dataset
 from datasets.rosbag_loader import load_rosbag_dataset
 from utils.csv_dataset import load_dataset_from_csv, save_dataset_to_csv
-from utils.generate_gnss import generate_gnss_measurements
-from utils.generate_imu import generate_imu_controls
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -46,10 +44,9 @@ def prepare_dataset(dataset_cfg: dict):
         dataset_cfg["pose_type"] = "3d"
         controls, measurements, gt, dt, timestamps_ns = load_m2dgr_dataset(dataset_cfg)
     else:
-        controls, gt = generate_imu_controls(dataset_cfg, pose_type=pose_type)
-        measurements = generate_gnss_measurements(dataset_cfg, pose_type=pose_type, gt=gt)
-        dt = float(dataset_cfg.get("dt", 0.1))
-        timestamps_ns = (np.arange(len(gt), dtype=np.int64) * int(round(float(dt) * 1e9))).astype(np.int64)
+        raise ValueError(
+            "Unsupported dataset_type. Supported values are euroc, rosbag/rosbag1/rosbag2/kaist_vio, and m2dgr."
+        )
 
     csv_path = save_dataset_to_csv(
         generated_csv_path,

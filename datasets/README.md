@@ -1,7 +1,7 @@
 # Dataset Guide
 
 Dataset selection examples and dataset-specific notes live here instead of the top-level README.
-The shared dataset config file is `config/dataset_config.yaml`.
+The current KAIST VIO benchmarks build their dataset settings in code and read filter settings from `config/compare.yaml`.
 
 ## Common Fields
 

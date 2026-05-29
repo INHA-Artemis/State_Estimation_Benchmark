@@ -66,7 +66,10 @@ def load_rosbag_dataset(dataset_cfg: dict) -> tuple[np.ndarray, np.ndarray, np.n
     else:
         dt[0] = float(dataset_cfg.get("dt", 0.005))
 
-    measurements = build_noisy_position_measurements(gt, dataset_cfg, "rosbag_use_gt_as_gnss")
+    use_gt_measurement_key = "rosbag_use_gt_as_position_measurement"
+    if use_gt_measurement_key not in dataset_cfg and "rosbag_use_gt_as_gnss" in dataset_cfg:
+        use_gt_measurement_key = "rosbag_use_gt_as_gnss"
+    measurements = build_noisy_position_measurements(gt, dataset_cfg, use_gt_measurement_key)
     return controls, measurements, gt, dt, gt_timestamps
 
 

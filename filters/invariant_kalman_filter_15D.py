@@ -9,8 +9,8 @@ from utils.filter_math import diagonal_covariance, kalman_update
 from utils.math_utils import fit_diag, fit_vector
 
 
-class InvariantKalmanFilter:
-    """Small SE_2(3) InEKF-style filter for repository comparison."""
+class InvariantKalmanFilter15D:
+    """SE_2(3) InEKF with 15D error state [dR, dv, dp, dbg, dba]."""
 
     def __init__(
         self,
@@ -23,34 +23,26 @@ class InvariantKalmanFilter:
         if pose_type == "6d":
             pose_type = "3d"
         if pose_type != "3d":
-            raise ValueError("InvariantKalmanFilter supports only 3d pose.")
-
-        self.pose_type = pose_type
-        self.mode = mode
-        self.error_dim = 9
+            raise ValueError("InvariantKalmanFilter15D supports only 3d pose.")
 
         motion_cfg = motion_config or {}
         meas_cfg = measurement_config or {}
         init_cfg = initialization_config or {}
-        self.use_imu_velocity = bool(motion_cfg.get("use_imu_velocity", True))
-        self.use_imu_rotation = bool(motion_cfg.get("use_imu_rotation", True))
-        self.translation_input_frame = str(motion_cfg.get("translation_input_frame", "world"))
-        self.translation_input_type = str(motion_cfg.get("translation_input_type", "velocity"))
-        self.rotation_input_type = str(motion_cfg.get("rotation_input_type", "increment"))
-        self.rotation_representation = str(motion_cfg.get("rotation_representation", "rotvec"))
+
+        self.pose_type = pose_type
+        self.mode = mode
+        self.error_dim = 15
         self.gravity = np.asarray(motion_cfg.get("gravity", [0.0, 0.0, -9.81]), dtype=float).reshape(3)
-        self.accel_bias = fit_vector(motion_cfg.get("accel_bias", [0.0, 0.0, 0.0]), 3)
-        self.gyro_bias = fit_vector(motion_cfg.get("gyro_bias", [0.0, 0.0, 0.0]), 3)
-        self.velocity_blend = float(motion_cfg.get("velocity_blend", 0.0))
         self.process_noise_diag = fit_diag(
-            motion_cfg.get("process_noise_diag", [1e-6, 1e-6, 1e-6, 1e-5, 1e-5, 1e-5, 1e-8, 1e-8, 1e-8]),
+            motion_cfg.get(
+                "process_noise_diag",
+                [1e-5, 1e-5, 1e-5, 1e-3, 1e-3, 1e-3, 1e-3, 1e-3, 1e-3, 1e-6, 1e-6, 1e-6, 1e-5, 1e-5, 1e-5],
+            ),
             self.error_dim,
         )
-
-        self.measurement_indices = np.asarray(meas_cfg.get("position_indices", [0, 1, 2]), dtype=int)
         self.measurement_noise_diag = fit_diag(
             meas_cfg.get("measurement_noise_diag", [1.0, 1.0, 1.0]),
-            self.measurement_indices.size,
+            3,
         )
         self.innovation_gate_m = float(meas_cfg.get("innovation_gate_m", 0.0))
         self.mahalanobis_gate = float(meas_cfg.get("mahalanobis_gate", 0.0))
@@ -58,23 +50,24 @@ class InvariantKalmanFilter:
         self.Rot = np.eye(3, dtype=float)
         self.v = np.zeros(3, dtype=float)
         self.p = np.zeros(3, dtype=float)
+        self.gyro_bias = fit_vector(motion_cfg.get("gyro_bias", [0.0, 0.0, 0.0]), 3)
+        self.accel_bias = fit_vector(motion_cfg.get("accel_bias", [0.0, 0.0, 0.0]), 3)
         self.P = np.eye(self.error_dim, dtype=float)
         self.Phi = np.eye(self.error_dim, dtype=float)
         self.Q = diagonal_covariance(self.process_noise_diag)
-        self.H = lie.position_measurement_matrix(self.p, self.measurement_indices)
+        self.H = np.zeros((3, self.error_dim), dtype=float)
+        self.H[:, 6:9] = np.eye(3)
         self.Rm = diagonal_covariance(self.measurement_noise_diag)
-        self.innovation = np.zeros(self.measurement_indices.size, dtype=float)
-        self.S = np.eye(self.measurement_indices.size, dtype=float)
-        self.K = np.zeros((self.error_dim, self.measurement_indices.size), dtype=float)
+        self.innovation = np.zeros(3, dtype=float)
+        self.K = np.zeros((self.error_dim, 3), dtype=float)
         self.delta = np.zeros(self.error_dim, dtype=float)
         self.X = lie.as_matrix(self.Rot, self.v, self.p)
-        self.dX = np.eye(5, dtype=float)
         self.initialized = False
         self.initialize(init_cfg.get("mean"), init_cfg.get("cov_diag"), init_cfg.get("velocity_mean"))
 
     @classmethod
-    def from_configs(cls, dataset_config: dict, compare_config: dict) -> "InvariantKalmanFilter":
-        cfg = compare_config.get("invariant_kalman_filter", compare_config)
+    def from_configs(cls, dataset_config: dict, compare_config: dict) -> "InvariantKalmanFilter15D":
+        cfg = compare_config.get("invariant_kalman_filter_15d", compare_config.get("invariant_kalman_filter", compare_config))
         return cls(
             pose_type=dataset_config.get("pose_type", cfg.get("pose_type", "3d")),
             mode=dataset_config.get("mode", cfg.get("mode", "fused")),
@@ -100,55 +93,64 @@ class InvariantKalmanFilter:
     def predict(self, control: Iterable[float] | None, dt: float) -> np.ndarray:
         if not self.initialized:
             self.initialize()
-        if control is not None:
-            # INEKF-P1: bias-correct control and propagate mean on SE_2(3).
-            u = self._correct_control(control)
-            self.Rot, self.v, self.p = lie.propagate_mean(
-                self.Rot,
-                self.v,
-                self.p,
-                u,
-                dt,
-                use_imu_velocity=self.use_imu_velocity,
-                use_imu_rotation=self.use_imu_rotation,
-                translation_input_frame=self.translation_input_frame,
-                translation_input_type=self.translation_input_type,
-                rotation_input_type=self.rotation_input_type,
-                rotation_representation=self.rotation_representation,
-                gravity=self.gravity,
-                velocity_blend=self.velocity_blend,
-            )
+        if control is None:
+            return self.estimate_pose()
 
-        # INEKF-P2: build error-state transition and process covariance.
-        self.Phi = lie.error_transition(dt)
-        self.Q = diagonal_covariance(self.process_noise_diag * max(float(dt), 1e-3))
-        # INEKF-P3: propagate error covariance and synchronize matrix state X_k^-.
-        self.P = 0.5 * (self.Phi @ self.P @ self.Phi.T + self.Q + (self.Phi @ self.P @ self.Phi.T + self.Q).T)
+        u = np.asarray(control, dtype=float).reshape(-1)
+        if u.size < 6:
+            raise ValueError("3D InEKF control must contain [ax, ay, az, gx, gy, gz].")
+        dt = float(dt)
+        dt = max(dt, 0.0)
+        dt2 = dt * dt
+
+        w = u[3:6] - self.gyro_bias
+        a = u[0:3] - self.accel_bias
+        phi = w * dt
+        G0 = lie.so3_exp(phi)
+        G1 = lie.so3_left_jacobian(phi)
+        G2 = _gamma2(phi)
+
+        R_prev = self.Rot
+        v_prev = self.v.copy()
+        self.Rot = R_prev @ G0
+        self.v = self.v + R_prev @ G1 @ a * dt + self.gravity * dt
+        self.p = self.p + v_prev * dt + R_prev @ G2 @ a * dt2 + 0.5 * self.gravity * dt2
+
+        A = np.zeros((self.error_dim, self.error_dim), dtype=float)
+        A[0:3, 0:3] = -lie.skew(w)
+        A[0:3, 9:12] = -np.eye(3)
+        A[3:6, 0:3] = -lie.skew(a)
+        A[3:6, 3:6] = -lie.skew(w)
+        A[3:6, 12:15] = -np.eye(3)
+        A[6:9, 3:6] = np.eye(3)
+        A[6:9, 6:9] = -lie.skew(w)
+
+        self.Phi = _matrix_exp(A * dt)
+        self.Q = diagonal_covariance(self.process_noise_diag)
+        predicted = self.Phi @ self.P @ self.Phi.T + self.Phi @ self.Q @ self.Phi.T * max(dt, 1e-9)
+        self.P = 0.5 * (predicted + predicted.T)
         self.X = lie.as_matrix(self.Rot, self.v, self.p)
         return self.estimate_pose()
 
     def measurement_update(self, measurement: Iterable[float] | None) -> np.ndarray:
         if measurement is None:
             return self.estimate_pose()
-        z = np.asarray(measurement, dtype=float).reshape(-1)
-        if z.size != self.measurement_indices.size:
-            raise ValueError("measurement size must match measurement indices.")
-
-        # INEKF-U1: compute position innovation and apply optional outlier gates.
-        self.innovation = z - self.p[self.measurement_indices]
+        z = np.asarray(measurement, dtype=float).reshape(3)
+        self.innovation = z - self.p
         if self._reject_measurement():
             return self.estimate_pose()
 
-        # INEKF-U2: update linearized error covariance and gain.
-        self.H = lie.position_measurement_matrix(self.p, self.measurement_indices)
+        self.H = np.zeros((3, self.error_dim), dtype=float)
+        self.H[:, 6:9] = np.eye(3)
         self.Rm = diagonal_covariance(self.measurement_noise_diag)
         _, P_update, self.innovation, self.S, self.K = kalman_update(
             np.zeros(self.error_dim, dtype=float), self.P, self.innovation, self.H, self.Rm
         )
-        # INEKF-U3: map error correction through exp(delta) and inject it into X.
         self.delta = self.K @ self.innovation
-        self.dX = lie.se23_exp(self.delta)
-        self.Rot, self.v, self.p = lie.from_matrix(self.dX @ lie.as_matrix(self.Rot, self.v, self.p))
+        dX = lie.se23_exp(self.delta[:9])
+        self.Rot, self.v, self.p = lie.from_matrix(dX @ lie.as_matrix(self.Rot, self.v, self.p))
+        self.gyro_bias = self.gyro_bias + self.delta[9:12]
+        self.accel_bias = self.accel_bias + self.delta[12:15]
         self.X = lie.as_matrix(self.Rot, self.v, self.p)
         self.P = 0.5 * (P_update + P_update.T)
         return self.estimate_pose()
@@ -174,8 +176,10 @@ class InvariantKalmanFilter:
             np.zeros(self.error_dim, dtype=float), self.P, self.innovation, H, Rm
         )
         self.delta = self.K @ self.innovation
-        self.dX = lie.se23_exp(self.delta)
-        self.Rot, self.v, self.p = lie.from_matrix(self.dX @ lie.as_matrix(self.Rot, self.v, self.p))
+        dX = lie.se23_exp(self.delta[:9])
+        self.Rot, self.v, self.p = lie.from_matrix(dX @ lie.as_matrix(self.Rot, self.v, self.p))
+        self.gyro_bias = self.gyro_bias + self.delta[9:12]
+        self.accel_bias = self.accel_bias + self.delta[12:15]
         self.X = lie.as_matrix(self.Rot, self.v, self.p)
         self.P = 0.5 * (P_update + P_update.T)
         return self.estimate_pose()
@@ -189,40 +193,52 @@ class InvariantKalmanFilter:
     ) -> np.ndarray:
         run_mode = self.mode if mode is None else mode
         if run_mode in {"imu_only", "fused"}:
-            # INEKF-S1: run Lie-group prediction when control/IMU is enabled.
             self.predict(control, dt)
         if run_mode in {"gnss_only", "fused"}:
-            # INEKF-S2: run position correction when GNSS/position is enabled.
             self.measurement_update(measurement)
-        # INEKF-S3: expose the benchmark pose format.
         return self.estimate_pose()
-
-    def run(self, dataset, mode: str | None = None) -> np.ndarray:
-        estimates = [
-            self.step(sample.get("control"), sample.get("measurement"), float(sample.get("dt", 1.0)), mode=mode)
-            for sample in dataset
-        ]
-        return np.vstack(estimates) if estimates else np.zeros((0, 6), dtype=float)
 
     def estimate_pose(self) -> np.ndarray:
         return lie.pose_from_state(self.Rot, self.p)
 
-    def _correct_control(self, control: Iterable[float]) -> np.ndarray:
-        u = np.asarray(control, dtype=float).reshape(-1)
-        if u.size < 6:
-            raise ValueError("3D InEKF control must contain [linear(3), angular(3)].")
-        u = u.copy()
-        u[0:3] -= self.accel_bias
-        u[3:6] -= self.gyro_bias
-        return u
-
     def _reject_measurement(self) -> bool:
         if self.innovation_gate_m > 0.0 and np.linalg.norm(self.innovation) > self.innovation_gate_m:
             return True
-        self.H = lie.position_measurement_matrix(self.p, self.measurement_indices)
+        self.H = np.zeros((3, self.error_dim), dtype=float)
+        self.H[:, 6:9] = np.eye(3)
         self.Rm = diagonal_covariance(self.measurement_noise_diag)
-        self.S = self.H @ self.P @ self.H.T + self.Rm + 1e-12 * np.eye(self.innovation.size)
+        self.S = self.H @ self.P @ self.H.T + self.Rm + 1e-12 * np.eye(3)
         if self.mahalanobis_gate <= 0.0:
             return False
         maha = float(self.innovation.T @ np.linalg.solve(self.S, self.innovation))
         return maha > self.mahalanobis_gate
+
+
+def _gamma2(phi: np.ndarray) -> np.ndarray:
+    phi = np.asarray(phi, dtype=float).reshape(3)
+    theta = float(np.linalg.norm(phi))
+    K = lie.skew(phi)
+    if theta < 1e-8:
+        return 0.5 * np.eye(3) + (1.0 / 6.0) * K + (1.0 / 24.0) * (K @ K)
+    return (
+        0.5 * np.eye(3)
+        + ((theta - np.sin(theta)) / theta**3) * K
+        + ((theta**2 + 2.0 * np.cos(theta) - 2.0) / (2.0 * theta**4)) * (K @ K)
+    )
+
+
+def _matrix_exp(matrix: np.ndarray) -> np.ndarray:
+    matrix = np.asarray(matrix, dtype=float)
+    norm = float(np.linalg.norm(matrix, ord=np.inf))
+    scale = max(0, int(np.ceil(np.log2(norm))) + 1) if norm > 0.5 else 0
+    A = matrix / (2**scale)
+    result = np.eye(A.shape[0], dtype=float)
+    term = np.eye(A.shape[0], dtype=float)
+    for order in range(1, 24):
+        term = term @ A / float(order)
+        result = result + term
+        if np.linalg.norm(term, ord=np.inf) < 1e-14:
+            break
+    for _ in range(scale):
+        result = result @ result
+    return result

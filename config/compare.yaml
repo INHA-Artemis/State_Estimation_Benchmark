@@ -1,0 +1,125 @@
+# Comparable filter settings for fair comparison with external repositories.
+# These configs intentionally disable our full 15D IMU-bias/adaptive-outlier
+# advantages for KF/EKF/UKF/PF and use baseline mathematical variables:
+# x, P, F/Phi, Q, H, R, innovation/y, S, K.
+
+common:
+  pose_type: 3d
+  mode: imu_only
+  state_convention:
+    cv_3d: [px, py, pz, vx, vy, vz]
+    cv_2d: [px, py, vx, vy]
+    pose_output_3d: [px, py, pz, roll_zero, pitch_zero, yaw_zero]
+    pose_output_2d: [px, py, yaw_zero]
+
+kalman_filter:
+  filter:
+    name: comparable_kf
+  initialization:
+    mean: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    cov_diag: [1.0, 1.0, 1.0, 0.5, 0.5, 0.5]
+  motion_model:
+    type: constant_acceleration_control
+    control_input_type: acceleration
+    gravity: [0.0, 0.0, -9.81]
+    accel_bias: [0.0, 0.0, 0.0]
+    process_noise_diag: [0.0025, 0.0025, 0.0025, 0.01, 0.01, 0.01]
+  measurement_model:
+    type: linear_position
+    position_indices: [0, 1, 2]
+    measurement_noise_diag: [0.0025, 0.0025, 0.0025]
+
+extended_kalman_filter:
+  filter:
+    name: comparable_ekf
+  initialization:
+    mean: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    cov_diag: [1.0, 1.0, 1.0, 0.5, 0.5, 0.5]
+  motion_model:
+    type: constant_acceleration_control
+    control_input_type: acceleration
+    gravity: [0.0, 0.0, -9.81]
+    accel_bias: [0.0, 0.0, 0.0]
+    process_noise_diag: [1.0e-5, 1.0e-5, 1.0e-5, 1.0e-4, 1.0e-4, 1.0e-4]
+  measurement_model:
+    type: linear_position
+    position_indices: [0, 1, 2]
+    measurement_noise_diag: [0.0025, 0.0025, 0.0025]
+
+unscented_kalman_filter:
+  filter:
+    name: comparable_ukf
+  initialization:
+    mean: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    cov_diag: [1.0, 1.0, 1.0, 0.5, 0.5, 0.5]
+  motion_model:
+    type: constant_acceleration_control
+    control_input_type: acceleration
+    gravity: [0.0, 0.0, -9.81]
+    accel_bias: [0.0, 0.0, 0.0]
+    process_noise_diag: [1.0e-5, 1.0e-5, 1.0e-5, 1.0e-4, 1.0e-4, 1.0e-4]
+  measurement_model:
+    type: linear_position
+    position_indices: [0, 1, 2]
+    measurement_noise_diag: [0.0025, 0.0025, 0.0025]
+  sigma_points:
+    alpha: 1.0
+    beta: 0.0
+    kappa: 2.0
+
+particle_filter:
+  filter:
+    name: comparable_pf
+  num_particles: 50000
+  resample_threshold_ratio: 0.5
+  resampling_method: systematic
+  seed: 7
+  initialization:
+    mean: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    cov_diag: [0.5, 0.5, 0.5, 0.3, 0.3, 0.3]
+  motion_model:
+    type: constant_acceleration_control
+    control_input_type: acceleration
+    gravity: [0.0, 0.0, -9.81]
+    accel_bias: [0.0, 0.0, 0.0]
+    process_noise_diag: [0.0025, 0.0025, 0.0025, 0.01, 0.01, 0.01]
+  measurement_model:
+    type: linear_position
+    position_indices: [0, 1, 2]
+    measurement_noise_diag: [0.0025, 0.0025, 0.0025]
+    measurement_rejuvenation: true
+
+invariant_kalman_filter:
+  filter:
+    name: comparable_inekf
+  notes: >
+    SE_2(3) comparable InEKF using 9D error state [dR, dv, dp].
+    Bias-state and full analytic IMU acceleration Phi blocks from drift or
+    invariant-ekf are intentionally not included in this lightweight comparable
+    wrapper; those should be listed as external-repo-only capabilities.
+  initialization:
+    mean: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    velocity_mean: [0.0, 0.0, 0.0]
+    # Error-state order: [dR(3), dv(3), dp(3)].
+    # Keep rotation confident, but keep velocity/position open enough for the
+    # sparse pseudo-position updates to correct IMU integration drift.
+    cov_diag: [0.001, 0.001, 0.001, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0]
+  motion_model:
+    use_imu_velocity: true
+    use_imu_rotation: true
+    velocity_blend: 0.0
+    process_noise_diag: [1.0e-6, 1.0e-6, 1.0e-6, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3]
+    # Comparable benchmark convention: KF/EKF/UKF/PF consume acceleration as
+    # world-frame control, so InEKF uses the same frame for position propagation.
+    translation_input_frame: world
+    translation_input_type: acceleration
+    gravity: [0.0, 0.0, -9.81]
+    accel_bias: [0.0, 0.0, 0.0]
+    gyro_bias: [0.0, 0.0, 0.0]
+    rotation_input_type: rate
+    rotation_representation: rotvec
+  measurement_model:
+    position_indices: [0, 1, 2]
+    measurement_noise_diag: [0.0025, 0.0025, 0.0025]
+    innovation_gate_m: 0.8
+    mahalanobis_gate: 9.0

@@ -5,13 +5,12 @@ from typing import Iterable
 import numpy as np
 
 from models import constant_velocity as cv
-from utils.filter_math import cross_variance, diagonal_covariance, weighted_covariance
+from utils.filter_math import diagonal_covariance, kalman_update
 from utils.math_utils import fit_diag, fit_vector
-from utils.sigma_points import merwe_sigma_points
 
 
-class UnscentedKalmanFilter:
-    """UKF over the shared constant-velocity benchmark model."""
+class KalmanFilter:
+    """Linear KF for the shared constant-velocity benchmark model."""
 
     def __init__(
         self,
@@ -19,7 +18,6 @@ class UnscentedKalmanFilter:
         mode: str = "fused",
         motion_config: dict | None = None,
         measurement_config: dict | None = None,
-        sigma_point_config: dict | None = None,
     ) -> None:
         self.pose_type = cv.normalize_pose_type(pose_type)
         self.mode = mode
@@ -28,7 +26,6 @@ class UnscentedKalmanFilter:
 
         motion_cfg = motion_config or {}
         meas_cfg = measurement_config or {}
-        sigma_cfg = sigma_point_config or {}
         self.process_noise_diag = fit_diag(motion_cfg.get("process_noise_diag", np.full(self.dim, 1e-3)), self.dim)
         self.control_input_type = str(motion_cfg.get("control_input_type", "none")).lower()
         self.gravity = fit_vector(motion_cfg.get("gravity", [0.0, 0.0, -9.81]), self.pos_dim)
@@ -38,40 +35,29 @@ class UnscentedKalmanFilter:
             meas_cfg.get("measurement_noise_diag", np.ones(self.measurement_indices.size)),
             self.measurement_indices.size,
         )
-        self.alpha = float(sigma_cfg.get("alpha", 0.5))
-        self.beta = float(sigma_cfg.get("beta", 2.0))
-        self.kappa = float(sigma_cfg.get("kappa", 3.0 - self.dim))
-        self.lambda_ = self.alpha**2 * (self.dim + self.kappa) - self.dim
 
         self.x = np.zeros(self.dim, dtype=float)
         self.P = np.eye(self.dim, dtype=float)
+        self.F = np.eye(self.dim, dtype=float)
         self.Q = diagonal_covariance(self.process_noise_diag)
+        self.H = cv.measurement_matrix(self.measurement_indices, self.dim)
         self.R = diagonal_covariance(self.measurement_noise_diag)
-        self.sigma_points = np.zeros((2 * self.dim + 1, self.dim), dtype=float)
-        self.sigmas_f = self.sigma_points.copy()
-        self.sigmas_h = np.zeros((2 * self.dim + 1, self.measurement_indices.size), dtype=float)
-        self.Wm = np.zeros(2 * self.dim + 1, dtype=float)
-        self.Wc = np.zeros(2 * self.dim + 1, dtype=float)
-        self.z_mean = np.zeros(self.measurement_indices.size, dtype=float)
-        self.Pxz = np.zeros((self.dim, self.measurement_indices.size), dtype=float)
-        self.innovation = np.zeros(self.measurement_indices.size, dtype=float)
-        self.y = self.innovation
+        self.y = np.zeros(self.measurement_indices.size, dtype=float)
         self.S = np.eye(self.measurement_indices.size, dtype=float)
         self.K = np.zeros((self.dim, self.measurement_indices.size), dtype=float)
         self.initialized = False
 
     @classmethod
-    def from_configs(cls, dataset_config: dict, compare_config: dict) -> "UnscentedKalmanFilter":
-        cfg = compare_config.get("unscented_kalman_filter", compare_config)
-        ukf = cls(
+    def from_configs(cls, dataset_config: dict, compare_config: dict) -> "KalmanFilter":
+        cfg = compare_config.get("kalman_filter", compare_config)
+        kf = cls(
             pose_type=dataset_config.get("pose_type", cfg.get("pose_type", "3d")),
             mode=dataset_config.get("mode", cfg.get("mode", "fused")),
             motion_config=cfg.get("motion_model", {}),
             measurement_config=cfg.get("measurement_model", {}),
-            sigma_point_config=cfg.get("sigma_points", {}),
         )
-        ukf.initialize(cfg.get("initialization", {}).get("mean"), cfg.get("initialization", {}).get("cov_diag"))
-        return ukf
+        kf.initialize(cfg.get("initialization", {}).get("mean"), cfg.get("initialization", {}).get("cov_diag"))
+        return kf
 
     def initialize(self, mean: Iterable[float] | None = None, cov_diag: Iterable[float] | None = None) -> None:
         self.x = cv.fit_state(mean, self.pose_type)
@@ -81,40 +67,27 @@ class UnscentedKalmanFilter:
     def predict(self, control: Iterable[float] | None, dt: float) -> np.ndarray:
         if not self.initialized:
             self.initialize()
-        # UKF-P1: draw Merwe sigma points around x_{k-1}, P_{k-1}.
-        self.sigma_points, self.Wm, self.Wc, self.lambda_ = merwe_sigma_points(
-            self.x, self.P, self.alpha, self.beta, self.kappa
-        )
-        # UKF-P2: propagate each sigma point through f(chi_i, u_k, dt).
-        self.sigmas_f = np.vstack([self._transition_function(sigma, control, dt) for sigma in self.sigma_points])
-        # UKF-P3: recover predicted mean and covariance from propagated sigma points.
-        self.x = np.sum(self.sigmas_f * self.Wm[:, None], axis=0)
+        # KF-P1: build the linear transition and process covariance.
+        self.F = cv.transition_matrix(self.pos_dim, dt)
         self.Q = diagonal_covariance(self.process_noise_diag)
-        self.P = weighted_covariance(self.sigmas_f, self.x, self.Wc) + self.Q
-        # UKF-P4: refresh sigma points around x_k^-, P_k^- for the update.
-        self.sigma_points, self.Wm, self.Wc, self.lambda_ = merwe_sigma_points(
-            self.x, self.P, self.alpha, self.beta, self.kappa
+        # KF-P2: predict state mean, x_k^- = F_k x_{k-1} + b_k.
+        self.x = self.F @ self.x + cv.control_vector(
+            control, self.pos_dim, dt, self.control_input_type, self.accel_bias, self.gravity
         )
+        # KF-P3: predict covariance, P_k^- = F_k P_{k-1} F_k^T + Q_k.
+        self.P = self.F @ self.P @ self.F.T + self.Q
         return self.estimate_pose()
 
     def measurement_update(self, measurement: Iterable[float] | None) -> np.ndarray:
         if measurement is None:
             return self.estimate_pose()
-        # UKF-U1: validate z_k and project sigma points through h(chi_i).
+        # KF-U1: validate measurement z_k.
         z = cv.validate_measurement(measurement, self.measurement_indices.size)
-        self.sigmas_h = np.vstack([cv.measurement_function(sigma, self.measurement_indices) for sigma in self.sigma_points])
-        # UKF-U2: recover predicted measurement mean and innovation covariance.
-        self.z_mean = np.sum(self.sigmas_h * self.Wm[:, None], axis=0)
+        # KF-U2: build linear measurement matrix and measurement covariance.
+        self.H = cv.measurement_matrix(self.measurement_indices, self.dim)
         self.R = diagonal_covariance(self.measurement_noise_diag)
-        self.S = weighted_covariance(self.sigmas_h, self.z_mean, self.Wc) + self.R
-        # UKF-U3: compute state/measurement cross covariance and Kalman gain.
-        self.Pxz = cross_variance(self.x, self.z_mean, self.sigma_points, self.sigmas_h, self.Wc)
-        self.K = self.Pxz @ np.linalg.inv(self.S)
-        # UKF-U4: correct mean and covariance with the innovation.
-        self.innovation = z - self.z_mean
-        self.y = self.innovation
-        self.x = self.x + self.K @ self.innovation
-        self.P = self.P - self.K @ self.S @ self.K.T
+        # KF-U3: correct with y_k, S_k, K_k, x_k, and Joseph-form P_k.
+        self.x, self.P, self.y, self.S, self.K = kalman_update(self.x, self.P, z, self.H, self.R)
         return self.estimate_pose()
 
     def step(
@@ -126,12 +99,12 @@ class UnscentedKalmanFilter:
     ) -> np.ndarray:
         run_mode = self.mode if mode is None else mode
         if run_mode in {"imu_only", "fused"}:
-            # UKF-S1: run prediction when control/IMU is enabled.
+            # KF-S1: run prediction when control/IMU is enabled.
             self.predict(control, dt)
         if run_mode in {"gnss_only", "fused"}:
-            # UKF-S2: run measurement update when GNSS/position is enabled.
+            # KF-S2: run measurement update when GNSS/position is enabled.
             self.measurement_update(measurement)
-        # UKF-S3: expose the benchmark pose format.
+        # KF-S3: expose the benchmark pose format.
         return self.estimate_pose()
 
     def run(self, dataset, mode: str | None = None) -> np.ndarray:
@@ -143,8 +116,3 @@ class UnscentedKalmanFilter:
 
     def estimate_pose(self) -> np.ndarray:
         return cv.pose_from_state(self.x, self.pose_type)
-
-    def _transition_function(self, x: np.ndarray, control: Iterable[float] | None, dt: float) -> np.ndarray:
-        return cv.transition_function(
-            x, control, self.pos_dim, dt, self.control_input_type, self.accel_bias, self.gravity
-        )

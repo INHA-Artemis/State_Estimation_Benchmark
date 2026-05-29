@@ -60,7 +60,7 @@ pip install -r requirements.txt
 ## Common Execution Flow
 
 All filter runners follow the same flow:
-1. Read `config/dataset_config.yaml` and the filter-specific config.
+1. Read the benchmark config from `config/compare.yaml`.
 2. Load or generate controls, measurements, ground truth, and timestamps.
 3. Save a unified dataset CSV.
 4. Run the filter and save trajectory/error artifacts.
