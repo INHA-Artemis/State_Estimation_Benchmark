@@ -51,11 +51,23 @@ PF is therefore not expected to dominate the clean Gaussian case; its advantage 
 
 ## Installation
 
+Native dependencies for local C++ comparison builds on Ubuntu:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake ffmpeg pkg-config python3-dev libboost-test-dev libeigen3-dev libspatialindex-dev libyaml-cpp-dev
+```
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e compare_repos/filterpy -e compare_repos/Stone-Soup
 ```
+
+The two Python comparison repositories are installed in editable mode so their
+benchmark dependencies are available while the benchmark scripts still import
+the vendored source under `compare_repos/`.
 
 ## Common Execution Flow
 
@@ -65,23 +77,42 @@ All filter runners follow the same flow:
 3. Save a unified dataset CSV.
 4. Run the filter and save trajectory/error artifacts.
 
-## How To Run Filters
+## How To Run Benchmarks
 
-All filter runners follow the same pattern:
-
-```bash
-cd /workspace/State_Estimation_Benchmark
-python3 examples/run_<filter>.py
-```
-
-`<filter>` is the suffix used by the matching runner file under `examples/`.
-To inspect raw inputs before filtering:
+The active benchmark entry points live under `benchmarks/`:
 
 ```bash
-python3 examples/plot_dataset_before.py --source both
+python3 benchmarks/filterpy_kaist_vio_benchmark.py --max-steps 500
+python3 benchmarks/stonesoup_kaist_vio_benchmark.py --max-steps 500
+python3 benchmarks/invariant_ekf_kaist_vio_benchmark.py --max-steps 500
+python3 benchmarks/drift_kaist_vio_benchmark.py --max-steps 500
 ```
 
-Dataset setup examples and dataset-specific notes were moved to [datasets/README.md](/workspace/State_Estimation_Benchmark/datasets/README.md).
+By default the scripts read `config/compare.yaml`, use the dataset paths in
+that file, and write outputs under `outputs/benchmarks/`. Use `--max-steps` for
+quick checks and omit it for full runs.
+
+The C++ comparison scripts need native runner binaries. Build them locally with:
+
+```bash
+cmake -S compare_repos/invariant-ekf/inekf -B compare_repos/invariant-ekf/inekf/build -DBUILD_TESTS=OFF
+cmake --build compare_repos/invariant-ekf/inekf/build --target kaist_vio_runner --parallel
+
+cmake -S compare_repos/drift -B compare_repos/drift/build -DBUILD_TESTS=OFF -DBUILD_DOC=OFF
+cmake --build compare_repos/drift/build --target kaist_vio_runner --parallel
+```
+
+Then pass the runner path when you want the external C++ result included:
+
+```bash
+python3 benchmarks/invariant_ekf_kaist_vio_benchmark.py \
+  --runner compare_repos/invariant-ekf/inekf/build/bin/kaist_vio_runner
+
+python3 benchmarks/drift_kaist_vio_benchmark.py \
+  --runner compare_repos/drift/build/kaist_vio_runner
+```
+
+Dataset setup examples and dataset-specific notes live in [datasets/README.md](datasets/README.md).
 
 ## Synthetic Comparison Summary
 All rows below use `synthetic_test`, `3d`, `1000` steps from the latest single-run logs in `examples/run_*.py`.
@@ -225,6 +256,37 @@ Build the image:
 
 ```bash
 docker build -t state-estimation-benchmark:latest .
+```
+
+The image includes Python benchmark dependencies, `ffmpeg` for MP4 output, and
+prebuilt native runners for `compare_repos/invariant-ekf` and
+`compare_repos/drift`.
+
+Run a quick benchmark check:
+
+```bash
+docker run --rm \
+  -v "$PWD/outputs:/app/outputs" \
+  state-estimation-benchmark:latest \
+  python3 benchmarks/filterpy_kaist_vio_benchmark.py --max-steps 500
+```
+
+Run all comparison families:
+
+```bash
+docker run --rm -v "$PWD/outputs:/app/outputs" state-estimation-benchmark:latest \
+  python3 benchmarks/filterpy_kaist_vio_benchmark.py
+
+docker run --rm -v "$PWD/outputs:/app/outputs" state-estimation-benchmark:latest \
+  python3 benchmarks/stonesoup_kaist_vio_benchmark.py
+
+docker run --rm -v "$PWD/outputs:/app/outputs" state-estimation-benchmark:latest \
+  python3 benchmarks/invariant_ekf_kaist_vio_benchmark.py \
+    --runner /app/compare_repos/invariant-ekf/inekf/build/bin/kaist_vio_runner
+
+docker run --rm -v "$PWD/outputs:/app/outputs" state-estimation-benchmark:latest \
+  python3 benchmarks/drift_kaist_vio_benchmark.py \
+    --runner /app/compare_repos/drift/build/kaist_vio_runner
 ```
 
 ## References
