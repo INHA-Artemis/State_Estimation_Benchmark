@@ -48,6 +48,7 @@ METRIC_Y_AXIS_LIMITS = {
 from filters.extended_kalman_filter import ExtendedKalmanFilter
 from filters.particle_filter import ParticleFilter
 from filters.unscented_kalman_filter import UnscentedKalmanFilter
+from utils.benchmark_config import apply_benchmark_dataset_config, dataset_run_slug, default_benchmark_output_root
 from utils.prepare_dataset import prepare_dataset
 from utils.yaml_loader import load_yaml
 
@@ -72,12 +73,15 @@ def main() -> None:
         description="Compare local comparable EKF/UKF/InEKF/PF with Stone Soup EKF/UKF/PF on KAIST VIO."
     )
     parser.add_argument("--compare-config", default=str(PROJECT_ROOT / "config" / "compare.yaml"))
-    parser.add_argument("--bag", default=str(PROJECT_ROOT / "datasets" / "KAIST_VIO" / "infinite.bag"))
-    parser.add_argument("--output-dir", default=str(PROJECT_ROOT / "outputs" / "benchmarks" / "stonesoup_kaist_vio"))
-    parser.add_argument("--dataset-name", default="kaist_vio_infinite")
-    parser.add_argument("--imu-topic", default="/mavros/imu/data")
-    parser.add_argument("--gt-topic", default="/pose_transformed")
-    parser.add_argument("--linear-source", default="accel", choices=["gt_velocity", "accel"])
+    parser.add_argument("--dataset-type", default=None, choices=["kaist_vio", "m2dgr"])
+    parser.add_argument("--bag", default=None)
+    parser.add_argument("--output-dir", default=None)
+    parser.add_argument("--dataset-name", default=None)
+    parser.add_argument("--imu-topic", default=None)
+    parser.add_argument("--gt-topic", default=None)
+    parser.add_argument("--gt-txt", default=None)
+    parser.add_argument("--gnss-topic", default=None)
+    parser.add_argument("--linear-source", default=None, choices=["gt_velocity", "accel"])
     measurement_group = parser.add_mutually_exclusive_group()
     measurement_group.add_argument(
         "--use-pseudo-position-measurement",
@@ -124,11 +128,15 @@ def main() -> None:
     parser.add_argument("--skip-stonesoup", action="store_true")
     args = parser.parse_args()
 
-    compare_cfg = _effective_compare_config(load_yaml(Path(args.compare_config)), args)
+    compare_cfg = load_yaml(Path(args.compare_config))
+    apply_benchmark_dataset_config(args, compare_cfg, PROJECT_ROOT)
+    if args.output_dir is None:
+        args.output_dir = str(default_benchmark_output_root(PROJECT_ROOT, "stonesoup", args.dataset_type))
+    compare_cfg = _effective_compare_config(compare_cfg, args)
     output_dir = _resolve_run_output_dir(args)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_cfg = _build_kaist_dataset_config(args, output_dir)
+    dataset_cfg = _build_dataset_config(args, output_dir)
     pose_type, dataset_name, csv_path, dataset, gt, dt, timestamps_ns = prepare_dataset(dataset_cfg)
     if args.max_steps and args.max_steps > 0:
         dataset = dataset[: args.max_steps]
@@ -223,20 +231,11 @@ def _resolve_run_output_dir(args: argparse.Namespace) -> Path:
 
 
 def _run_output_slug(args: argparse.Namespace) -> str:
-    bag_stem = Path(args.bag).stem
-    if bag_stem:
-        return _slug(bag_stem)
-
-    dataset_name = str(args.dataset_name)
-    prefix = "kaist_vio_"
-    if dataset_name.startswith(prefix):
-        dataset_name = dataset_name[len(prefix):]
-    return _slug(dataset_name) or "run"
+    return dataset_run_slug(args.bag, args.dataset_name, args.dataset_type)
 
 
-def _build_kaist_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
-    return {
-        "dataset_type": "kaist_vio",
+def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
+    common_cfg = {
         "dataset_name": args.dataset_name,
         "pose_type": "3d",
         "mode": (
@@ -244,6 +243,31 @@ def _build_kaist_dataset_config(args: argparse.Namespace, output_dir: Path) -> d
             if args.use_pseudo_position_measurement
             else "imu_only"
         ),
+        "generated_csv_path": str(output_dir / f"{args.dataset_name}_dataset.csv"),
+        "use_imu": True,
+        "use_gnss": False,
+        "use_position_measurement": bool(args.use_pseudo_position_measurement),
+        "position_measurement_noise_model": "gaussian",
+        "position_measurement_noise_std": list(args.position_measurement_noise_std),
+        "gnss_noise_model": "gaussian",
+        "gnss_noise_std": list(args.position_measurement_noise_std),
+        "imu_noise_std": [0.0, 0.0],
+        "imu_bias_std": [0.0, 0.0],
+    }
+    if args.dataset_type == "m2dgr":
+        return {
+            **common_cfg,
+            "dataset_type": "m2dgr",
+            "m2dgr_bag_path": str(Path(args.bag)),
+            "m2dgr_gt_txt_path": str(Path(args.gt_txt)),
+            "m2dgr_imu_topic": args.imu_topic,
+            "m2dgr_gnss_topic": args.gnss_topic,
+            "m2dgr_linear_source": args.linear_source,
+            "m2dgr_use_gt_as_gnss": bool(args.use_pseudo_position_measurement),
+        }
+    return {
+        **common_cfg,
+        "dataset_type": "kaist_vio",
         "rosbag_path": str(Path(args.bag)),
         "rosbag_imu_topic": args.imu_topic,
         "rosbag_gt_topic": args.gt_topic,
@@ -256,16 +280,6 @@ def _build_kaist_dataset_config(args: argparse.Namespace, output_dir: Path) -> d
         ),
         "pseudo_position_stride": max(1, int(args.pseudo_position_stride)),
         "pseudo_position_offset": max(0, int(args.pseudo_position_offset)),
-        "generated_csv_path": str(output_dir / f"{args.dataset_name}_dataset.csv"),
-        "use_imu": True,
-        "use_gnss": False,
-        "use_position_measurement": bool(args.use_pseudo_position_measurement),
-        "position_measurement_noise_model": "gaussian",
-        "position_measurement_noise_std": list(args.position_measurement_noise_std),
-        "gnss_noise_model": "gaussian",
-        "gnss_noise_std": list(args.position_measurement_noise_std),
-        "imu_noise_std": [0.0, 0.0],
-        "imu_bias_std": [0.0, 0.0],
     }
 
 

@@ -12,6 +12,23 @@ common:
     pose_output_3d: [px, py, pz, roll_zero, pitch_zero, yaw_zero]
     pose_output_2d: [px, py, yaw_zero]
 
+dataset:
+  # To switch back to KAIST VIO, use this block:
+  # type: kaist_vio
+  # name: kaist_vio_square
+  # bag: datasets/KAIST_VIO/square.bag
+  # imu_topic: /mavros/imu/data
+  # gt_topic: /pose_transformed
+  # linear_source: accel
+
+  type: m2dgr
+  name: m2dgr_street_02
+  bag: datasets/M2DGR/street_02.bag
+  gt_txt: datasets/M2DGR/street_02.txt
+  imu_topic: /handsfree/imu
+  gnss_topic: /ublox/fix
+  linear_source: gt_velocity
+
 kalman_filter:
   filter:
     name: comparable_kf

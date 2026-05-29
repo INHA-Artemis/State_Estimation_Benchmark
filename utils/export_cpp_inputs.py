@@ -12,19 +12,25 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from utils.cpp_repo_exporters import export_cpp_repo_inputs
+from utils.benchmark_config import apply_benchmark_dataset_config
 from utils.prepare_dataset import prepare_dataset
+from utils.yaml_loader import load_yaml
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Export KAIST VIO inputs for the invariant-ekf and drift C++ repositories."
     )
-    parser.add_argument("--bag", default=str(PROJECT_ROOT / "datasets" / "KAIST_VIO" / "infinite.bag"))
+    parser.add_argument("--compare-config", default=str(PROJECT_ROOT / "config" / "compare.yaml"))
+    parser.add_argument("--dataset-type", default=None, choices=["kaist_vio", "m2dgr"])
+    parser.add_argument("--bag", default=None)
     parser.add_argument("--output-dir", default=str(PROJECT_ROOT / "outputs" / "cpp_inputs" / "kaist_vio"))
-    parser.add_argument("--dataset-name", default="kaist_vio_infinite")
-    parser.add_argument("--imu-topic", default="/mavros/imu/data")
-    parser.add_argument("--gt-topic", default="/pose_transformed")
-    parser.add_argument("--linear-source", default="accel", choices=["gt_velocity", "accel"])
+    parser.add_argument("--dataset-name", default=None)
+    parser.add_argument("--imu-topic", default=None)
+    parser.add_argument("--gt-topic", default=None)
+    parser.add_argument("--gt-txt", default=None)
+    parser.add_argument("--gnss-topic", default=None)
+    parser.add_argument("--linear-source", default=None, choices=["gt_velocity", "accel"])
     measurement_group = parser.add_mutually_exclusive_group()
     measurement_group.add_argument(
         "--use-pseudo-position-measurement",
@@ -51,6 +57,8 @@ def main() -> None:
     parser.add_argument("--max-steps", type=int, default=0)
     args = parser.parse_args()
 
+    compare_cfg = load_yaml(Path(args.compare_config))
+    apply_benchmark_dataset_config(args, compare_cfg, PROJECT_ROOT)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -92,8 +100,7 @@ def main() -> None:
 
 
 def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict:
-    return {
-        "dataset_type": "kaist_vio",
+    common_cfg = {
         "dataset_name": args.dataset_name,
         "pose_type": "3d",
         "mode": (
@@ -101,6 +108,31 @@ def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict:
             if args.use_pseudo_position_measurement
             else "imu_only"
         ),
+        "generated_csv_path": str(output_dir / f"{args.dataset_name}_dataset.csv"),
+        "use_imu": True,
+        "use_gnss": False,
+        "use_position_measurement": bool(args.use_pseudo_position_measurement),
+        "position_measurement_noise_model": "gaussian",
+        "position_measurement_noise_std": list(args.position_measurement_noise_std),
+        "gnss_noise_model": "gaussian",
+        "gnss_noise_std": list(args.position_measurement_noise_std),
+        "imu_noise_std": [0.0, 0.0],
+        "imu_bias_std": [0.0, 0.0],
+    }
+    if args.dataset_type == "m2dgr":
+        return {
+            **common_cfg,
+            "dataset_type": "m2dgr",
+            "m2dgr_bag_path": str(Path(args.bag)),
+            "m2dgr_gt_txt_path": str(Path(args.gt_txt)),
+            "m2dgr_imu_topic": args.imu_topic,
+            "m2dgr_gnss_topic": args.gnss_topic,
+            "m2dgr_linear_source": args.linear_source,
+            "m2dgr_use_gt_as_gnss": bool(args.use_pseudo_position_measurement),
+        }
+    return {
+        **common_cfg,
+        "dataset_type": "kaist_vio",
         "rosbag_path": str(Path(args.bag)),
         "rosbag_imu_topic": args.imu_topic,
         "rosbag_gt_topic": args.gt_topic,
@@ -113,16 +145,6 @@ def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict:
         ),
         "pseudo_position_stride": max(1, int(args.pseudo_position_stride)),
         "pseudo_position_offset": max(0, int(args.pseudo_position_offset)),
-        "generated_csv_path": str(output_dir / f"{args.dataset_name}_dataset.csv"),
-        "use_imu": True,
-        "use_gnss": False,
-        "use_position_measurement": bool(args.use_pseudo_position_measurement),
-        "position_measurement_noise_model": "gaussian",
-        "position_measurement_noise_std": list(args.position_measurement_noise_std),
-        "gnss_noise_model": "gaussian",
-        "gnss_noise_std": list(args.position_measurement_noise_std),
-        "imu_noise_std": [0.0, 0.0],
-        "imu_bias_std": [0.0, 0.0],
     }
 
 

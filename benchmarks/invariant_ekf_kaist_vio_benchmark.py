@@ -20,6 +20,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from utils.cpp_repo_exporters import export_invariant_ekf_input
+from utils.benchmark_config import apply_benchmark_dataset_config, dataset_run_slug, default_benchmark_output_root
 from utils.prepare_dataset import prepare_dataset
 from utils.yaml_loader import load_yaml
 from filters.invariant_kalman_filter import InvariantKalmanFilter
@@ -46,12 +47,15 @@ class BenchmarkResult:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark compare_repos/invariant-ekf on KAIST VIO.")
     parser.add_argument("--compare-config", default=str(PROJECT_ROOT / "config" / "compare.yaml"))
-    parser.add_argument("--bag", default=str(PROJECT_ROOT / "datasets" / "KAIST_VIO" / "infinite.bag"))
-    parser.add_argument("--output-dir", default=str(PROJECT_ROOT / "outputs" / "benchmarks" / "invariant_ekf_kaist_vio"))
-    parser.add_argument("--dataset-name", default="kaist_vio_infinite")
-    parser.add_argument("--imu-topic", default="/mavros/imu/data")
-    parser.add_argument("--gt-topic", default="/pose_transformed")
-    parser.add_argument("--linear-source", default="accel", choices=["gt_velocity", "accel"])
+    parser.add_argument("--dataset-type", default=None, choices=["kaist_vio", "m2dgr"])
+    parser.add_argument("--bag", default=None)
+    parser.add_argument("--output-dir", default=None)
+    parser.add_argument("--dataset-name", default=None)
+    parser.add_argument("--imu-topic", default=None)
+    parser.add_argument("--gt-topic", default=None)
+    parser.add_argument("--gt-txt", default=None)
+    parser.add_argument("--gnss-topic", default=None)
+    parser.add_argument("--linear-source", default=None, choices=["gt_velocity", "accel"])
     measurement_group = parser.add_mutually_exclusive_group()
     measurement_group.add_argument("--use-pseudo-position-measurement", dest="use_pseudo_position_measurement", action="store_true", default=True)
     measurement_group.add_argument("--imu-only", dest="use_pseudo_position_measurement", action="store_false")
@@ -75,9 +79,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    output_dir = _resolve_run_output_dir(Path(args.output_dir), Path(args.bag), args.dataset_name)
+    compare_cfg = load_yaml(Path(args.compare_config))
+    apply_benchmark_dataset_config(args, compare_cfg, PROJECT_ROOT)
+    if args.output_dir is None:
+        args.output_dir = str(default_benchmark_output_root(PROJECT_ROOT, "invariant_ekf", args.dataset_type))
+    output_dir = _resolve_run_output_dir(Path(args.output_dir), Path(args.bag), args.dataset_name, args.dataset_type)
     output_dir.mkdir(parents=True, exist_ok=True)
-    compare_cfg = _effective_compare_config(load_yaml(Path(args.compare_config)), args)
+    compare_cfg = _effective_compare_config(compare_cfg, args)
 
     dataset_cfg = _build_dataset_config(args, output_dir)
     pose_type, dataset_name, dataset_csv, dataset, gt, dt, timestamps_ns = prepare_dataset(dataset_cfg)
@@ -239,8 +247,7 @@ def _resolve_runner(configured: str) -> Path | None:
 
 
 def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
-    return {
-        "dataset_type": "kaist_vio",
+    common_cfg = {
         "dataset_name": args.dataset_name,
         "pose_type": "3d",
         "mode": (
@@ -248,13 +255,6 @@ def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[st
             if args.use_pseudo_position_measurement
             else "imu_only"
         ),
-        "rosbag_path": str(Path(args.bag)),
-        "rosbag_imu_topic": args.imu_topic,
-        "rosbag_gt_topic": args.gt_topic,
-        "rosbag_linear_source": args.linear_source,
-        "rosbag_use_gt_as_position_measurement": bool(args.use_pseudo_position_measurement),
-        "pseudo_position_stride": max(1, int(args.pseudo_position_stride)),
-        "pseudo_position_offset": max(0, int(args.pseudo_position_offset)),
         "generated_csv_path": str(output_dir / f"{args.dataset_name}_dataset.csv"),
         "use_imu": True,
         "use_gnss": False,
@@ -265,6 +265,28 @@ def _build_dataset_config(args: argparse.Namespace, output_dir: Path) -> dict[st
         "gnss_noise_std": list(args.position_measurement_noise_std),
         "imu_noise_std": [0.0, 0.0],
         "imu_bias_std": [0.0, 0.0],
+    }
+    if args.dataset_type == "m2dgr":
+        return {
+            **common_cfg,
+            "dataset_type": "m2dgr",
+            "m2dgr_bag_path": str(Path(args.bag)),
+            "m2dgr_gt_txt_path": str(Path(args.gt_txt)),
+            "m2dgr_imu_topic": args.imu_topic,
+            "m2dgr_gnss_topic": args.gnss_topic,
+            "m2dgr_linear_source": args.linear_source,
+            "m2dgr_use_gt_as_gnss": bool(args.use_pseudo_position_measurement),
+        }
+    return {
+        **common_cfg,
+        "dataset_type": "kaist_vio",
+        "rosbag_path": str(Path(args.bag)),
+        "rosbag_imu_topic": args.imu_topic,
+        "rosbag_gt_topic": args.gt_topic,
+        "rosbag_linear_source": args.linear_source,
+        "rosbag_use_gt_as_position_measurement": bool(args.use_pseudo_position_measurement),
+        "pseudo_position_stride": max(1, int(args.pseudo_position_stride)),
+        "pseudo_position_offset": max(0, int(args.pseudo_position_offset)),
     }
 
 
@@ -624,8 +646,8 @@ def _failed(steps: int, runtime: float, notes: str) -> BenchmarkResult:
     return BenchmarkResult("external", "invariant-ekf", "inekf", "failed", None, None, runtime, steps, notes)
 
 
-def _resolve_run_output_dir(output_root: Path, bag_path: Path, dataset_name: str) -> Path:
-    run_slug = _slug(bag_path.stem) or _slug(dataset_name) or "run"
+def _resolve_run_output_dir(output_root: Path, bag_path: Path, dataset_name: str, dataset_type: str = "kaist_vio") -> Path:
+    run_slug = dataset_run_slug(str(bag_path), dataset_name, dataset_type)
     if output_root.name == run_slug:
         return output_root
     return output_root / run_slug
