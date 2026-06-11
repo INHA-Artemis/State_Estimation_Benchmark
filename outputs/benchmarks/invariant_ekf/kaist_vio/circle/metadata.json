@@ -1,0 +1,69 @@
+{
+  "dataset_name": "kaist_vio_circle",
+  "dataset_csv": "/app/outputs/benchmarks/invariant_ekf/kaist_vio/circle/kaist_vio_circle_dataset.csv",
+  "bag": "/app/datasets/KAIST_VIO/circle.bag",
+  "repo": "/app/compare_repos/invariant-ekf",
+  "repo_input": "/app/outputs/benchmarks/invariant_ekf/kaist_vio/circle/repo_inputs/invariant_ekf",
+  "results_csv": "/app/outputs/benchmarks/invariant_ekf/kaist_vio/circle/invariant_ekf_kaist_vio_results.csv",
+  "implementation": "invariant-ekf",
+  "algorithm": "inekf",
+  "runner": "",
+  "run_mode": "fused",
+  "linear_source": "accel",
+  "use_pseudo_position_measurement": true,
+  "pseudo_position_stride": 5,
+  "pseudo_position_offset": 0,
+  "position_measurement_noise_std": [
+    0.01,
+    0.01,
+    0.01
+  ],
+  "plots": [
+    "rmse_position.png",
+    "error_variance.png",
+    "runtime_sec.png"
+  ],
+  "animations": {
+    "inekf": {
+      "path": "trajectory_comparison_inekf.mp4",
+      "status": "ok",
+      "max_frames": 600,
+      "fps": 30,
+      "trajectory_dimension": "3d",
+      "covariance_ellipsoids": true,
+      "covariance_ellipsoid_sigma": 1.0
+    }
+  },
+  "results": [
+    {
+      "implementation": "Our InEKF",
+      "algorithm": "inekf",
+      "status": "ok",
+      "rmse_position": 0.044413587935472384,
+      "error_variance": 0.0005665539326965309,
+      "runtime_sec": 0.5287370079895481,
+      "input_csv": "/app/outputs/benchmarks/invariant_ekf/kaist_vio/circle/filter_inputs/our_inekf_9d.csv",
+      "notes": "benchmark_frame=body; comparison: world rmse=0.0494229, body rmse=0.0444136"
+    },
+    {
+      "implementation": "Our InEKF 15D",
+      "algorithm": "inekf",
+      "status": "ok",
+      "rmse_position": 0.014302462814897653,
+      "error_variance": 3.557922095318275e-05,
+      "runtime_sec": 1.309572760015726,
+      "input_csv": "/app/outputs/benchmarks/invariant_ekf/kaist_vio/circle/filter_inputs/our_inekf_15d.csv",
+      "notes": "benchmark_frame=body; comparison: world rmse=0.0244904, body rmse=0.0143025"
+    },
+    {
+      "implementation": "invariant-ekf",
+      "algorithm": "inekf",
+      "status": "ok",
+      "rmse_position": 0.08779941774045832,
+      "error_variance": 0.004653691634791167,
+      "runtime_sec": 3.1115464080357924,
+      "input_csv": "/app/outputs/benchmarks/invariant_ekf/kaist_vio/circle/repo_inputs/invariant_ekf",
+      "notes": ""
+    }
+  ]
+}

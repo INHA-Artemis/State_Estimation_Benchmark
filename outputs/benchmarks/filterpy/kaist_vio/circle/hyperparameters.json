@@ -1,0 +1,125 @@
+{
+  "comparable": {
+    "extended_kalman_filter": {
+      "filter": {
+        "name": "comparable_ekf"
+      },
+      "initialization": {
+        "mean": [
+          -0.07739086449146271,
+          0.0051404573023319244,
+          -0.0005954504013061523,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "cov_diag": [
+          1.0,
+          1.0,
+          1.0,
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "motion_model": {
+        "type": "constant_acceleration_control",
+        "control_input_type": "acceleration",
+        "gravity": [
+          0.0,
+          0.0,
+          -9.81
+        ],
+        "accel_bias": [
+          -0.3405528330802918,
+          0.014461517154705967,
+          -0.009674658775329803
+        ],
+        "process_noise_diag": [
+          1e-05,
+          1e-05,
+          1e-05,
+          0.0001,
+          0.0001,
+          0.0001
+        ]
+      },
+      "measurement_model": {
+        "type": "linear_position",
+        "position_indices": [
+          0,
+          1,
+          2
+        ],
+        "measurement_noise_diag": [
+          0.0001,
+          0.0001,
+          0.0001
+        ]
+      }
+    },
+    "unscented_kalman_filter": {
+      "filter": {
+        "name": "comparable_ukf"
+      },
+      "initialization": {
+        "mean": [
+          -0.07739086449146271,
+          0.0051404573023319244,
+          -0.0005954504013061523,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "cov_diag": [
+          1.0,
+          1.0,
+          1.0,
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "motion_model": {
+        "type": "constant_acceleration_control",
+        "control_input_type": "acceleration",
+        "gravity": [
+          0.0,
+          0.0,
+          -9.81
+        ],
+        "accel_bias": [
+          -0.3405528330802918,
+          0.014461517154705967,
+          -0.009674658775329803
+        ],
+        "process_noise_diag": [
+          1e-05,
+          1e-05,
+          1e-05,
+          0.0001,
+          0.0001,
+          0.0001
+        ]
+      },
+      "measurement_model": {
+        "type": "linear_position",
+        "position_indices": [
+          0,
+          1,
+          2
+        ],
+        "measurement_noise_diag": [
+          0.0001,
+          0.0001,
+          0.0001
+        ]
+      },
+      "sigma_points": {
+        "alpha": 1.0,
+        "beta": 0.0,
+        "kappa": 2.0
+      }
+    }
+  }
+}

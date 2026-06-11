@@ -1,0 +1,69 @@
+{
+  "dataset_name": "m2dgr_street_02",
+  "dataset_csv": "/app/outputs/benchmarks/invariant_ekf/m2dgr/street02/m2dgr_street_02_dataset.csv",
+  "bag": "/app/datasets/M2DGR/street_02.bag",
+  "repo": "/app/compare_repos/invariant-ekf",
+  "repo_input": "/app/outputs/benchmarks/invariant_ekf/m2dgr/street02/repo_inputs/invariant_ekf",
+  "results_csv": "/app/outputs/benchmarks/invariant_ekf/m2dgr/street02/invariant_ekf_kaist_vio_results.csv",
+  "implementation": "invariant-ekf",
+  "algorithm": "inekf",
+  "runner": "",
+  "run_mode": "fused",
+  "linear_source": "gt_velocity",
+  "use_pseudo_position_measurement": true,
+  "pseudo_position_stride": 5,
+  "pseudo_position_offset": 0,
+  "position_measurement_noise_std": [
+    0.01,
+    0.01,
+    0.01
+  ],
+  "plots": [
+    "rmse_position.png",
+    "error_variance.png",
+    "runtime_sec.png"
+  ],
+  "animations": {
+    "inekf": {
+      "path": "trajectory_comparison_inekf.mp4",
+      "status": "ok",
+      "max_frames": 600,
+      "fps": 30,
+      "trajectory_dimension": "3d",
+      "covariance_ellipsoids": true,
+      "covariance_ellipsoid_sigma": 1.0
+    }
+  },
+  "results": [
+    {
+      "implementation": "Our InEKF",
+      "algorithm": "inekf",
+      "status": "ok",
+      "rmse_position": 5.449192215099126,
+      "error_variance": 3.1627706383629786,
+      "runtime_sec": 5.957906028954312,
+      "input_csv": "/app/outputs/benchmarks/invariant_ekf/m2dgr/street02/filter_inputs/our_inekf_9d.csv",
+      "notes": "benchmark_frame=world; comparison: world rmse=5.44919, body rmse=5.49264"
+    },
+    {
+      "implementation": "Our InEKF 15D",
+      "algorithm": "inekf",
+      "status": "ok",
+      "rmse_position": 5.449145679312466,
+      "error_variance": 3.1473526460475423,
+      "runtime_sec": 15.442374862032011,
+      "input_csv": "/app/outputs/benchmarks/invariant_ekf/m2dgr/street02/filter_inputs/our_inekf_15d.csv",
+      "notes": "benchmark_frame=world; comparison: world rmse=5.44915, body rmse=5.45537"
+    },
+    {
+      "implementation": "invariant-ekf",
+      "algorithm": "inekf",
+      "status": "ok",
+      "rmse_position": 5.438421990983601,
+      "error_variance": 3.1425825174428956,
+      "runtime_sec": 43.89563714002725,
+      "input_csv": "/app/outputs/benchmarks/invariant_ekf/m2dgr/street02/repo_inputs/invariant_ekf",
+      "notes": ""
+    }
+  ]
+}

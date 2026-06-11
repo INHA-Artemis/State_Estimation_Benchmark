@@ -1,0 +1,57 @@
+{
+  "dataset_name": "kaist_vio_rotation",
+  "dataset_csv": "/app/outputs/benchmarks/stonesoup/kaist_vio/rotation/kaist_vio_rotation_dataset.csv",
+  "bag": "/app/datasets/KAIST_VIO/rotation.bag",
+  "output_root": "/app/outputs/benchmarks/stonesoup/kaist_vio",
+  "output_subdir": "rotation",
+  "steps": 7799,
+  "benchmark_model": "comparable",
+  "run_mode": "fused",
+  "linear_source": "accel",
+  "initial_pose_source": "gt_first_sample",
+  "measurement_source": "gt_sampled_pseudo_position_not_real_gnss",
+  "use_pseudo_position_measurement": true,
+  "pseudo_position_stride": 5,
+  "pseudo_position_offset": 0,
+  "position_measurement_noise_std": [
+    0.01,
+    0.01,
+    0.01
+  ],
+  "results_csv": "stonesoup_kaist_vio_results.csv",
+  "plots": [
+    "rmse_position.png",
+    "error_variance.png",
+    "runtime_sec.png"
+  ],
+  "animations": {
+    "ekf": {
+      "path": "trajectory_comparison_ekf.mp4",
+      "status": "ok",
+      "max_frames": 600,
+      "fps": 30,
+      "trajectory_dimension": "3d",
+      "covariance_ellipsoids": true,
+      "covariance_ellipsoid_sigma": 1.0
+    },
+    "ukf": {
+      "path": "trajectory_comparison_ukf.mp4",
+      "status": "ok",
+      "max_frames": 600,
+      "fps": 30,
+      "trajectory_dimension": "3d",
+      "covariance_ellipsoids": true,
+      "covariance_ellipsoid_sigma": 1.0
+    },
+    "pf": {
+      "path": "trajectory_comparison_pf.mp4",
+      "status": "ok",
+      "max_frames": 600,
+      "fps": 30,
+      "trajectory_dimension": "3d",
+      "covariance_ellipsoids": true,
+      "covariance_ellipsoid_sigma": 1.0
+    }
+  },
+  "skipped": []
+}

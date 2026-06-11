@@ -1,0 +1,8 @@
+{
+  "invariant_ekf": "outputs/cpp_inputs/kaist_vio/square/cpp_inputs/invariant_ekf",
+  "drift": "outputs/cpp_inputs/kaist_vio/square/cpp_inputs/drift.csv",
+  "notes": {
+    "invariant_ekf": "Zurich/AGZ-style CSV folder for the original invariant-ekf DataLoader. Pseudo-position rows are converted to synthetic LLA GPS around a fixed origin.",
+    "drift": "Flat CSV for a future drift CSV-to-measurement runner. Quaternion is reconstructed from benchmark GT roll/pitch/yaw."
+  }
+}

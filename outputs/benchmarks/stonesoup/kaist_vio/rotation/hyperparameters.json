@@ -1,0 +1,188 @@
+{
+  "comparable": {
+    "extended_kalman_filter": {
+      "filter": {
+        "name": "comparable_ekf"
+      },
+      "initialization": {
+        "mean": [
+          -0.00016519427299499512,
+          -2.568960189819336e-05,
+          5.526840686798096e-05,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "cov_diag": [
+          1.0,
+          1.0,
+          1.0,
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "motion_model": {
+        "type": "constant_acceleration_control",
+        "control_input_type": "acceleration",
+        "gravity": [
+          0.0,
+          0.0,
+          -9.81
+        ],
+        "accel_bias": [
+          -0.3707707992196083,
+          0.13308948989957659,
+          -0.011932311058044931
+        ],
+        "process_noise_diag": [
+          1e-05,
+          1e-05,
+          1e-05,
+          0.0001,
+          0.0001,
+          0.0001
+        ]
+      },
+      "measurement_model": {
+        "type": "linear_position",
+        "position_indices": [
+          0,
+          1,
+          2
+        ],
+        "measurement_noise_diag": [
+          0.0001,
+          0.0001,
+          0.0001
+        ]
+      }
+    },
+    "unscented_kalman_filter": {
+      "filter": {
+        "name": "comparable_ukf"
+      },
+      "initialization": {
+        "mean": [
+          -0.00016519427299499512,
+          -2.568960189819336e-05,
+          5.526840686798096e-05,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "cov_diag": [
+          1.0,
+          1.0,
+          1.0,
+          0.5,
+          0.5,
+          0.5
+        ]
+      },
+      "motion_model": {
+        "type": "constant_acceleration_control",
+        "control_input_type": "acceleration",
+        "gravity": [
+          0.0,
+          0.0,
+          -9.81
+        ],
+        "accel_bias": [
+          -0.3707707992196083,
+          0.13308948989957659,
+          -0.011932311058044931
+        ],
+        "process_noise_diag": [
+          1e-05,
+          1e-05,
+          1e-05,
+          0.0001,
+          0.0001,
+          0.0001
+        ]
+      },
+      "measurement_model": {
+        "type": "linear_position",
+        "position_indices": [
+          0,
+          1,
+          2
+        ],
+        "measurement_noise_diag": [
+          0.0001,
+          0.0001,
+          0.0001
+        ]
+      },
+      "sigma_points": {
+        "alpha": 1.0,
+        "beta": 0.0,
+        "kappa": 2.0
+      }
+    },
+    "particle_filter": {
+      "filter": {
+        "name": "comparable_pf"
+      },
+      "num_particles": 50000,
+      "resample_threshold_ratio": 0.5,
+      "resampling_method": "systematic",
+      "seed": 7,
+      "initialization": {
+        "mean": [
+          -0.00016519427299499512,
+          -2.568960189819336e-05,
+          5.526840686798096e-05,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "cov_diag": [
+          0.5,
+          0.5,
+          0.5,
+          0.3,
+          0.3,
+          0.3
+        ]
+      },
+      "motion_model": {
+        "type": "constant_acceleration_control",
+        "control_input_type": "acceleration",
+        "gravity": [
+          0.0,
+          0.0,
+          -9.81
+        ],
+        "accel_bias": [
+          -0.3707707992196083,
+          0.13308948989957659,
+          -0.011932311058044931
+        ],
+        "process_noise_diag": [
+          0.0025,
+          0.0025,
+          0.0025,
+          0.01,
+          0.01,
+          0.01
+        ]
+      },
+      "measurement_model": {
+        "type": "linear_position",
+        "position_indices": [
+          0,
+          1,
+          2
+        ],
+        "measurement_noise_diag": [
+          0.0001,
+          0.0001,
+          0.0001
+        ],
+        "measurement_rejuvenation": true
+      }
+    }
+  }
+}

@@ -1,4 +1,5 @@
-outputs/
+outputs/*.csv
+outputs/**/*.csv
 __pycache__/
 *.py[cod]
 .DS_Store

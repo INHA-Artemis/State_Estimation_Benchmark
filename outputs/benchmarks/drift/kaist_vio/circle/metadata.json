@@ -1,0 +1,75 @@
+{
+  "dataset_name": "kaist_vio_circle",
+  "dataset_csv": "/app/outputs/benchmarks/drift/kaist_vio/circle/kaist_vio_circle_dataset.csv",
+  "bag": "/app/datasets/KAIST_VIO/circle.bag",
+  "repo": "/app/compare_repos/drift",
+  "repo_input": "/app/outputs/benchmarks/drift/kaist_vio/circle/repo_inputs/drift.csv",
+  "results_csv": "/app/outputs/benchmarks/drift/kaist_vio/circle/drift_kaist_vio_results.csv",
+  "implementation": "drift",
+  "algorithm": "inekf",
+  "runner": "",
+  "run_mode": "fused",
+  "linear_source": "accel",
+  "comparison_measurement": "gt_derived_world_velocity",
+  "use_pseudo_position_measurement": true,
+  "pseudo_position_stride": 5,
+  "pseudo_position_offset": 0,
+  "position_measurement_noise_std": [
+    0.01,
+    0.01,
+    0.01
+  ],
+  "velocity_measurement_noise_std": [
+    0.05,
+    0.05,
+    0.05
+  ],
+  "plots": [
+    "rmse_position.png",
+    "error_variance.png",
+    "runtime_sec.png"
+  ],
+  "animations": {
+    "inekf": {
+      "path": "trajectory_comparison_inekf.mp4",
+      "status": "ok",
+      "max_frames": 600,
+      "fps": 30,
+      "trajectory_dimension": "3d",
+      "covariance_ellipsoids": true,
+      "covariance_ellipsoid_sigma": 1.0
+    }
+  },
+  "results": [
+    {
+      "implementation": "Our InEKF",
+      "algorithm": "inekf",
+      "status": "ok",
+      "rmse_position": 1.2038484061024664,
+      "error_variance": 0.3623167163918001,
+      "runtime_sec": 0.8245583079988137,
+      "input_csv": "/app/outputs/benchmarks/drift/kaist_vio/circle/filter_inputs/our_inekf_9d_velocity.csv",
+      "notes": "benchmark_frame=body; comparison: world rmse=0.440242, body rmse=1.20385"
+    },
+    {
+      "implementation": "Our InEKF 15D",
+      "algorithm": "inekf",
+      "status": "ok",
+      "rmse_position": 0.4879893945947602,
+      "error_variance": 0.07752658704337605,
+      "runtime_sec": 1.3408998879604042,
+      "input_csv": "/app/outputs/benchmarks/drift/kaist_vio/circle/filter_inputs/our_inekf_15d_velocity.csv",
+      "notes": "benchmark_frame=body; comparison: world rmse=1.31901, body rmse=0.487989"
+    },
+    {
+      "implementation": "drift",
+      "algorithm": "inekf",
+      "status": "ok",
+      "rmse_position": 0.5211123380617418,
+      "error_variance": 0.07757469982420964,
+      "runtime_sec": 0.1245805430226028,
+      "input_csv": "/app/outputs/benchmarks/drift/kaist_vio/circle/repo_inputs/drift.csv",
+      "notes": ""
+    }
+  ]
+}

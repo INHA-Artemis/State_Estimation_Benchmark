@@ -1,0 +1,21 @@
+{
+  "dataset_name": "kaist_vio_circle",
+  "dataset_csv": "/app/outputs/cpp_inputs/kaist_vio/circle/kaist_vio_circle_dataset.csv",
+  "bag": "/app/datasets/KAIST_VIO/circle.bag",
+  "steps": 8914,
+  "run_mode": "fused",
+  "linear_source": "accel",
+  "use_pseudo_position_measurement": true,
+  "pseudo_position_stride": 10,
+  "pseudo_position_offset": 0,
+  "position_measurement_noise_std": [
+    0.05,
+    0.05,
+    0.05
+  ],
+  "cpp_inputs": {
+    "manifest": "outputs/cpp_inputs/kaist_vio/circle/cpp_inputs/manifest.json",
+    "invariant_ekf": "outputs/cpp_inputs/kaist_vio/circle/cpp_inputs/invariant_ekf",
+    "drift": "outputs/cpp_inputs/kaist_vio/circle/cpp_inputs/drift.csv"
+  }
+}
