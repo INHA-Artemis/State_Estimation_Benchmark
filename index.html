@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IMU/GNSS State Estimation Benchmark</title>
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [["\\(", "\\)"], ["$", "$"]], displayMath: [["\\[", "\\]"]] },
+      svg: { fontCache: "global" }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #152033;
+      --muted: #536176;
+      --line: #d7dde8;
+      --soft: #f4f7fb;
+      --paper: #ffffff;
+      --accent: #0b6bcb;
+      --accent-2: #16805f;
+      --warn: #9a5b00;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+      color: var(--ink);
+      background: var(--paper);
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    .hero {
+      min-height: 58vh;
+      display: grid;
+      align-content: center;
+      padding: 64px 0 44px;
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--accent-2);
+      font-size: 0.86rem;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 920px;
+      font-size: clamp(2.1rem, 5vw, 4.8rem);
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 820px;
+      margin: 22px 0 0;
+      color: var(--muted);
+      font-size: clamp(1.03rem, 2vw, 1.26rem);
+    }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 28px;
+    }
+
+    nav a {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: var(--ink);
+      text-decoration: none;
+      background: #fff;
+      font-size: 0.92rem;
+    }
+
+    main {
+      padding: 34px 0 72px;
+    }
+
+    section {
+      padding: 42px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    section:last-child {
+      border-bottom: 0;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: clamp(1.7rem, 3vw, 2.45rem);
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 28px 0 10px;
+      font-size: 1.22rem;
+      letter-spacing: 0;
+    }
+
+    p {
+      max-width: 860px;
+      margin: 0 0 14px;
+    }
+
+    ul {
+      max-width: 920px;
+      padding-left: 22px;
+    }
+
+    li {
+      margin: 8px 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 18px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      background: var(--soft);
+    }
+
+    .panel h3 {
+      margin-top: 0;
+    }
+
+    .math-block {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+      background: #fbfcfe;
+      margin: 14px 0 18px;
+    }
+
+    figure {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: #fff;
+    }
+
+    figcaption {
+      padding: 12px 14px;
+      color: var(--muted);
+      font-size: 0.94rem;
+      border-top: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .note {
+      color: var(--warn);
+      font-weight: 650;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    code {
+      padding: 0.1em 0.28em;
+      border-radius: 4px;
+      background: #edf2f8;
+      font-size: 0.95em;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 18px 0;
+      font-size: 0.95rem;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--soft);
+    }
+
+    @media (max-width: 720px) {
+      .hero {
+        min-height: auto;
+        padding: 46px 0 34px;
+      }
+
+      section {
+        padding: 34px 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap hero">
+      <p class="eyebrow">IMU/GNSS State Estimation Benchmark</p>
+      <h1>A unified benchmark for EKF, UKF, Particle Filter, and Invariant EKF designs.</h1>
+      <p class="lead">
+        This project compares four estimator families under a common dataset adapter,
+        shared evaluation metrics, and reproducible visualization pipeline for KAIST VIO
+        and M2DGR trajectory scenarios.
+      </p>
+      <nav aria-label="Page sections">
+        <a href="#motivation">Motivation</a>
+        <a href="#notation">Notation</a>
+        <a href="#implementations">Implementations</a>
+        <a href="#results">Results</a>
+        <a href="#conclusions">Conclusions</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="motivation">
+      <h2>Motivation: What Is Different Here</h2>
+      <p>
+        Most filtering examples compare algorithms inside separate assumptions: different
+        data loaders, different state conventions, different plots, and often different
+        measurement preprocessing. This repository keeps those moving parts fixed so that
+        filter behavior is easier to attribute to the estimator design itself.
+      </p>
+      <div class="grid">
+        <div class="panel">
+          <h3>One benchmark surface</h3>
+          <p>
+            The benchmark scripts route FilterPy, Stone Soup, invariant-ekf, DRIFT, and
+            local implementations through a common dataset/output contract.
+          </p>
+        </div>
+        <div class="panel">
+          <h3>Comparable local filters</h3>
+          <p>
+            EKF, UKF, and PF use the same constant-velocity state and the same GNSS
+            observation model. That makes differences in linearization, sigma-point
+            propagation, and sampling visible.
+          </p>
+        </div>
+        <div class="panel">
+          <h3>Lie-group inertial filter</h3>
+          <p>
+            The 15D InEKF uses an \(SE_2(3)\) nominal state with orientation, velocity,
+            position, gyro bias, and accelerometer bias in the error state.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="notation">
+      <h2>Shared Notation</h2>
+      <p>
+        The notation below is used consistently across the four filter descriptions.
+        Superscript \(^{-}\) means a prediction before measurement correction, and
+        subscript \(k\) denotes the current timestep.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Meaning</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>\(x_k\)</td>
+            <td>Euclidean state for EKF, UKF, and PF: \(x_k=[p_k^\top, v_k^\top]^\top\), with \(p_k,v_k\in\mathbb{R}^d\).</td>
+          </tr>
+          <tr>
+            <td>\(X_k\)</td>
+            <td>InEKF nominal matrix state on \(SE_2(3)\): rotation \(R_k\), velocity \(v_k\), and position \(p_k\).</td>
+          </tr>
+          <tr>
+            <td>\(\delta x_k\)</td>
+            <td>InEKF error state \([\delta\theta^\top,\delta v^\top,\delta p^\top,\delta b_g^\top,\delta b_a^\top]^\top\in\mathbb{R}^{15}\).</td>
+          </tr>
+          <tr>
+            <td>\(u_k\)</td>
+            <td>Control or IMU input. For the constant-velocity model it may provide acceleration; for InEKF it stores acceleration and angular velocity.</td>
+          </tr>
+          <tr>
+            <td>\(z_k\)</td>
+            <td>GNSS or position-like measurement.</td>
+          </tr>
+          <tr>
+            <td>\(Q_k,R_k\)</td>
+            <td>Process and measurement covariance matrices.</td>
+          </tr>
+          <tr>
+            <td>\(P_k\)</td>
+            <td>State covariance for EKF/UKF, and error-state covariance for InEKF.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Shared Constant-Velocity Model</h3>
+      <div class="math-block">
+        \[
+        x_k =
+        \begin{bmatrix}
+        p_k \\
+        v_k
+        \end{bmatrix},
+        \quad
+        F_k =
+        \begin{bmatrix}
+        I_d & \Delta t I_d \\
+        0 & I_d
+        \end{bmatrix}
+        \]
+        \[
+        x_k^- = f(x_{k-1},u_k) = F_k x_{k-1} + b(u_k,\Delta t)
+        \]
+        \[
+        b(u_k,\Delta t)=
+        \begin{bmatrix}
+        \frac{1}{2}a_k\Delta t^2 \\
+        a_k\Delta t
+        \end{bmatrix},
+        \quad
+        a_k = u_k - b_a + g
+        \]
+        \[
+        z_k = h(x_k) + r_k = H_k x_k + r_k
+        \]
+      </div>
+      <p class="small">
+        In the implementation, \(d=2\) or \(d=3\), and \(H_k\) selects configured position coordinates.
+      </p>
+    </section>
+
+    <section id="implementations">
+      <h2>Filter Implementations</h2>
+
+      <h3>Extended Kalman Filter</h3>
+      <p>
+        The EKF is the linearized Gaussian estimator over the shared state \(x_k=[p_k,v_k]\).
+        In this benchmark the transition and measurement functions are already linear for
+        the constant-velocity path, so the Jacobians are exactly \(F_k\) and \(H_k\).
+      </p>
+      <div class="math-block">
+        \[
+        x_k^- = f(x_{k-1},u_k), \qquad
+        P_k^- = F_kP_{k-1}F_k^\top + Q_k
+        \]
+        \[
+        y_k = z_k - H_kx_k^-,
+        \quad
+        S_k = H_kP_k^-H_k^\top + R_k,
+        \quad
+        K_k = P_k^-H_k^\top S_k^{-1}
+        \]
+        \[
+        x_k = x_k^- + K_ky_k,
+        \quad
+        P_k = (I-K_kH_k)P_k^-(I-K_kH_k)^\top + K_kR_kK_k^\top
+        \]
+      </div>
+
+      <h3>Unscented Kalman Filter</h3>
+      <p>
+        The UKF uses the same \(x_k\), \(f\), and \(h\), but replaces local Jacobian
+        linearization with Merwe sigma points. This keeps the notation aligned with EKF
+        while changing how predicted moments are computed.
+      </p>
+      <div class="math-block">
+        \[
+        \chi_{k-1}^{(i)} = \operatorname{SigmaPoints}(x_{k-1},P_{k-1},\alpha,\beta,\kappa)
+        \]
+        \[
+        \chi_{k}^{-(i)} = f(\chi_{k-1}^{(i)},u_k),
+        \quad
+        x_k^- = \sum_i W_m^{(i)}\chi_k^{-(i)}
+        \]
+        \[
+        P_k^- = \sum_i W_c^{(i)}(\chi_k^{-(i)}-x_k^-)(\chi_k^{-(i)}-x_k^-)^\top + Q_k
+        \]
+        \[
+        \zeta_k^{(i)} = h(\chi_k^{-(i)}),
+        \quad
+        \bar z_k = \sum_i W_m^{(i)}\zeta_k^{(i)}
+        \]
+        \[
+        S_k = \sum_i W_c^{(i)}(\zeta_k^{(i)}-\bar z_k)(\zeta_k^{(i)}-\bar z_k)^\top + R_k
+        \]
+        \[
+        P_{xz,k}=\sum_i W_c^{(i)}(\chi_k^{-(i)}-x_k^-)(\zeta_k^{(i)}-\bar z_k)^\top,
+        \quad
+        K_k=P_{xz,k}S_k^{-1}
+        \]
+        \[
+        x_k=x_k^-+K_k(z_k-\bar z_k),
+        \quad
+        P_k=P_k^- - K_kS_kK_k^\top
+        \]
+      </div>
+
+      <h3>Particle Filter</h3>
+      <p>
+        The PF is a bootstrap filter over the same \(x_k=[p_k,v_k]\). The state posterior
+        is represented by particles \(\{x_k^{(i)},w_k^{(i)}\}_{i=1}^N\), which lets the
+        estimator represent non-Gaussian beliefs when measurements or dynamics become less
+        friendly to a single covariance ellipse.
+      </p>
+      <div class="math-block">
+        \[
+        x_k^{(i)-} = f(x_{k-1}^{(i)},u_k) + q_k^{(i)}, \qquad q_k^{(i)}\sim\mathcal{N}(0,Q_k)
+        \]
+        \[
+        \tilde w_k^{(i)} = w_{k-1}^{(i)}
+        \exp\left(-\frac{1}{2}(z_k-H_kx_k^{(i)-})^\top R_k^{-1}(z_k-H_kx_k^{(i)-})\right)
+        \]
+        \[
+        w_k^{(i)} = \frac{\tilde w_k^{(i)}}{\sum_j \tilde w_k^{(j)}},
+        \qquad
+        \hat x_k = \sum_i w_k^{(i)}x_k^{(i)}
+        \]
+        \[
+        N_{\mathrm{eff}} = \frac{1}{\sum_i (w_k^{(i)})^2}
+        \]
+      </div>
+      <p>
+        Resampling is triggered when \(N_{\mathrm{eff}}\) falls below the configured threshold,
+        and optional measurement rejuvenation can refresh particle positions and finite-difference
+        velocities around recent measurements.
+      </p>
+
+      <h3>15D Invariant Kalman Filter</h3>
+      <p>
+        The InEKF keeps the navigation state on \(SE_2(3)\) and updates a 15D error state.
+        This separates the nominal pose integration from the uncertainty correction, which is
+        useful for inertial navigation because rotations remain on \(SO(3)\).
+      </p>
+      <div class="math-block">
+        \[
+        X_k =
+        \begin{bmatrix}
+        R_k & v_k & p_k \\
+        0 & 1 & 0 \\
+        0 & 0 & 1
+        \end{bmatrix},
+        \quad
+        \delta x_k =
+        \begin{bmatrix}
+        \delta\theta_k \\
+        \delta v_k \\
+        \delta p_k \\
+        \delta b_{g,k} \\
+        \delta b_{a,k}
+        \end{bmatrix}
+        \]
+        \[
+        \omega_k = \omega_{m,k}-b_{g,k},
+        \quad
+        a_k = a_{m,k}-b_{a,k},
+        \quad
+        R_k^- = R_{k-1}\operatorname{Exp}(\omega_k\Delta t)
+        \]
+        \[
+        v_k^- = v_{k-1} + (R_{k-1}J_l(\omega_k\Delta t)a_k + g)\Delta t
+        \]
+        \[
+        p_k^- = p_{k-1} + v_{k-1}\Delta t
+        + R_{k-1}\Gamma_2(\omega_k\Delta t)a_k\Delta t^2
+        + \frac{1}{2}g\Delta t^2
+        \]
+        \[
+        \Phi_k=\exp(A_k\Delta t),
+        \qquad
+        P_k^-=\Phi_kP_{k-1}\Phi_k^\top+\Phi_kQ_k\Phi_k^\top\Delta t
+        \]
+        \[
+        y_k=z_k-p_k^-,
+        \quad
+        H_k =
+        \begin{bmatrix}
+        0_{3\times3} & 0_{3\times3} & I_3 & 0_{3\times3} & 0_{3\times3}
+        \end{bmatrix}
+        \]
+        \[
+        K_k=P_k^-H_k^\top(H_kP_k^-H_k^\top+R_k)^{-1},
+        \quad
+        \delta x_k=K_ky_k
+        \]
+        \[
+        X_k = \operatorname{Exp}_{SE_2(3)}(\delta x_{k,1:9})X_k^-,
+        \quad
+        b_{g,k}=b_{g,k}^-+\delta b_{g,k},
+        \quad
+        b_{a,k}=b_{a,k}^-+\delta b_{a,k}
+        \]
+      </div>
+      <p>
+        The implementation also includes innovation and Mahalanobis gates, bounded error
+        corrections, and covariance stabilization for long benchmark runs.
+      </p>
+    </section>
+
+    <section id="results">
+      <h2>Outcome Figures</h2>
+      <p>
+        The summary plots are grouped by dataset scenario and filter family. Each figure
+        reports position RMSE and runtime using the benchmark outputs generated by this repo.
+      </p>
+
+      <h3>KAIST VIO: EKF, UKF, and PF</h3>
+      <figure>
+        <img src="outputs/benchmarks/summary/report/kaist_vio_filterpy_stonesoup.png" alt="KAIST VIO EKF UKF PF benchmark summary">
+        <figcaption>KAIST VIO comparison for local EKF/UKF/PF against FilterPy and Stone Soup baselines.</figcaption>
+      </figure>
+
+      <h3>KAIST VIO: InEKF</h3>
+      <figure>
+        <img src="outputs/benchmarks/summary/report/kaist_vio_inekf.png" alt="KAIST VIO InEKF benchmark summary">
+        <figcaption>KAIST VIO InEKF comparison across local InEKF variants and external invariant-ekf/DRIFT runners.</figcaption>
+      </figure>
+
+      <h3>M2DGR Street02: EKF, UKF, and PF</h3>
+      <figure>
+        <img src="outputs/benchmarks/summary/report/m2dgr_filterpy_stonesoup.png" alt="M2DGR EKF UKF PF benchmark summary">
+        <figcaption>M2DGR Street02 comparison for local EKF/UKF/PF against FilterPy and Stone Soup baselines.</figcaption>
+      </figure>
+
+      <h3>M2DGR Street02: InEKF</h3>
+      <figure>
+        <img src="outputs/benchmarks/summary/report/m2dgr_inekf.png" alt="M2DGR InEKF benchmark summary">
+        <figcaption>M2DGR Street02 InEKF comparison for local and external invariant filtering paths.</figcaption>
+      </figure>
+    </section>
+
+    <section id="conclusions">
+      <h2>Conclusions</h2>
+      <ul>
+        <li>
+          A shared state, dataset adapter, and plotting pipeline make algorithmic tradeoffs
+          easier to inspect than isolated one-off demos.
+        </li>
+        <li>
+          EKF is the simplest baseline and is efficient when the motion and measurement
+          assumptions are close to linear and Gaussian.
+        </li>
+        <li>
+          UKF keeps the same Gaussian summary as EKF but replaces Jacobian linearization
+          with sigma-point moment propagation, which is useful as dynamics become more nonlinear.
+        </li>
+        <li>
+          PF is the most flexible local estimator because it approximates the posterior with
+          weighted samples, but that flexibility costs more runtime and depends strongly on
+          particle count, resampling, and rejuvenation settings.
+        </li>
+        <li>
+          The 15D InEKF is the most geometry-aware local design. It is a better match for
+          inertial navigation because attitude evolves on \(SO(3)\), while position, velocity,
+          and biases are corrected through a consistent error state.
+        </li>
+      </ul>
+      <p class="note">
+        To publish this page, enable GitHub Pages from the repository root on the main branch.
+        The expected URL is <code>https://inha-artemis.github.io/State_Estimation_Benchmark/</code>.
+      </p>
+    </section>
+  </main>
+</body>
+</html>
