@@ -1,0 +1,12 @@
+[submodule "compare_repos/Stone-Soup"]
+	path = compare_repos/Stone-Soup
+	url = https://github.com/dstl/Stone-Soup.git
+[submodule "compare_repos/filterpy"]
+	path = compare_repos/filterpy
+	url = https://github.com/rlabbe/filterpy.git
+[submodule "compare_repos/invariant-ekf"]
+	path = compare_repos/invariant-ekf
+	url = https://github.com/ghaggin/invariant-ekf.git
+[submodule "compare_repos/drift"]
+	path = compare_repos/drift
+	url = https://github.com/UMich-CURLY/drift.git
