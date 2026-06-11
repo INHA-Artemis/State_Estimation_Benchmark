@@ -3,6 +3,9 @@
 This repository is a Python benchmark library for IMU/GNSS state estimation.
 It provides a unified pipeline for dataset preparation, filter execution, and trajectory/error visualization.
 
+Project page with equations, trajectory videos, and benchmark summaries:
+[https://inha-artemis.github.io/State_Estimation_Benchmark/](https://inha-artemis.github.io/State_Estimation_Benchmark/)
+
 ## Overview
 
 Implemented filters:
