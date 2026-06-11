@@ -108,6 +108,8 @@ def main() -> None:
     parser.add_argument("--output-dir", default="", help="Defaults to outputs/benchmarks/summary/report.")
     parser.add_argument("--linear-scale", action="store_true", help="Use linear y axes instead of log-scale axes.")
     parser.add_argument("--single-report", choices=[str(report["name"]) for report in REPORTS], default="")
+    parser.add_argument("--only-algorithm", default="", help="Only plot rows matching this algorithm, e.g. pf.")
+    parser.add_argument("--output-suffix", default="", help="Suffix appended to generated CSV/PNG filenames.")
     parser.add_argument(
         "--pf-rmse-summary",
         default=str(DEFAULT_PF_RMSE_SUMMARY),
@@ -141,9 +143,12 @@ def main() -> None:
     for report in selected_reports:
         rows, missing = collect_report_rows(outputs_root, report)
         apply_pf_repeat_summary(rows, pf_repeat_summary)
+        if args.only_algorithm:
+            algorithm = args.only_algorithm.lower()
+            rows = [row for row in rows if str(row.get("algorithm", "")).lower() == algorithm]
         all_missing.extend(missing)
-        summary_csv = output_dir / f"{report['name']}_summary.csv"
-        figure_path = output_dir / f"{report['name']}.png"
+        summary_csv = output_dir / f"{report['name']}{args.output_suffix}_summary.csv"
+        figure_path = output_dir / f"{report['name']}{args.output_suffix}.png"
         write_summary_csv(summary_csv, rows)
         draw_report_figure(figure_path, rows, report, log_scale=not args.linear_scale)
         print(f"[BenchmarkSummary] CSV   : {summary_csv}")
@@ -441,7 +446,24 @@ def _normalize_pf_repeat_dataset(value: str) -> str:
 
 
 def _metric_yerr(run_rows: list[dict[str, Any]], field: str) -> np.ndarray | None:
-    return None
+    if field == "rmse_position":
+        error_key = "rmse_error"
+    elif field == "runtime_sec":
+        error_key = "runtime_error"
+    else:
+        return None
+
+    errors: list[float] = []
+    has_error = False
+    for row in run_rows:
+        is_pf = str(row.get("algorithm", "")).lower() == "pf"
+        error = _float_or_nan(row.get(error_key))
+        if is_pf and np.isfinite(error) and error > 0.0:
+            errors.append(float(error))
+            has_error = True
+        else:
+            errors.append(0.0)
+    return np.asarray(errors, dtype=float) if has_error else None
 
 
 def _annotation_tops(values: np.ndarray, yerr: np.ndarray | None) -> np.ndarray:
